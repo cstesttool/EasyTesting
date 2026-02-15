@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSTesting Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 24px; background: #1a1a2e; color: #eee; line-height: 1.5; }
+    .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: 1.5rem; font-weight: 600; }
+    .summary-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill { padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: opacity 0.2s; border: 2px solid transparent; }
+    .pill:hover { opacity: 0.9; }
+    .pill.passed { background: #1b3d1b; color: #6f6; }
+    .pill.failed { background: #3d1b1b; color: #f66; }
+    .pill.skipped { background: #3d351b; color: #dd8; }
+    .pill.total { background: #1b2d3d; color: #8af; }
+    .pill.active { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
+    .bar-section { margin-bottom: 20px; }
+    .bar-label { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .bar-container { display: flex; height: 24px; border-radius: 6px; overflow: hidden; background: #0d0d1a; }
+    .bar-seg { transition: width 0.2s; min-width: 2px; }
+    .bar-seg.passed { background: #2d5a2d; }
+    .bar-seg.failed { background: #5a2d2d; }
+    .bar-seg.skipped { background: #5a4d2d; }
+    .bar-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; }
+    .bar-legend span { display: flex; align-items: center; gap: 6px; }
+    .bar-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .bar-legend .dot.passed { background: #6f6; }
+    .bar-legend .dot.failed { background: #f66; }
+    .bar-legend .dot.skipped { background: #aa8; }
+    .panel { display: none; margin-top: 16px; }
+    .panel.active { display: block; }
+    .panel h2 { font-size: 1.1rem; margin: 0 0 12px; }
+    .panel.pass-panel h2 { color: #6f6; }
+    .panel.fail-panel h2 { color: #f88; }
+    .panel.skip-panel h2 { color: #aa8; }
+    .panel.total-panel h2 { color: #8af; }
+    .test-row { display: flex; align-items: flex-start; gap: 10px; padding: 0; margin-bottom: 8px; border-radius: 6px; background: #16213e; overflow: hidden; }
+    .test-row .test-body { flex: 1; min-width: 0; }
+    .test-row-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; cursor: pointer; transition: background 0.15s; }
+    .test-row-header:hover { background: #1a2744; }
+    .test-row-header:focus { outline: 2px solid #4a6fa5; outline-offset: 2px; }
+    .test-row.expanded .test-row-header { border-bottom: 1px solid #2a3555; }
+    .test-row.expanded .test-chevron { transform: rotate(90deg); }
+    .test-row-details { max-height: 0; overflow: hidden; transition: max-height 0.25s ease-out; }
+    .test-row.expanded .test-row-details { max-height: 2000px; transition: max-height 0.35s ease-in; }
+    .test-row-details > div { padding: 12px 12px 12px 22px; }
+    .test-name { font-weight: 500; word-break: break-word; }
+    .test-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; font-size: 13px; }
+    .test-duration { color: #888; }
+    .test-chevron { font-size: 10px; color: #888; transition: transform 0.2s; }
+    .test-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .test-status.status-pass { background: #1b3d1b; color: #6f6; }
+    .test-status.status-fail { background: #3d1b1b; color: #f66; }
+    .test-status.status-skip { background: #3d351b; color: #aa8; }
+    .test-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin: 14px 0 0 10px; }
+    .test-dot.pass { background: #6f6; }
+    .test-dot.fail { background: #f66; }
+    .test-dot.skip { background: #aa8; }
+    .pw-steps-section { margin: 0 0 16px; }
+    .pw-steps-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 8px; }
+    .pw-steps-list { border: 1px solid #2a3555; border-radius: 6px; overflow: hidden; background: #0d0d1a; }
+    .pw-step-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #1a1a2e; min-height: 40px; }
+    .pw-step-row:last-child { border-bottom: none; }
+    .pw-step-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
+    .pw-step-icon-passed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .pw-step-icon-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .pw-step-index { color: #666; font-size: 12px; min-width: 20px; }
+    .pw-step-title { color: #e5e5e5; flex: 1; }
+    .pw-no-steps { color: #666; font-size: 13px; margin: 0; padding: 12px; }
+    .pw-no-steps code { background: #1a1a2e; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    .pw-error-section { margin-top: 16px; border-top: 1px solid #2a3555; padding-top: 16px; }
+    .pw-error-content { border: 1px solid #3d1b1b; border-radius: 6px; background: rgba(127, 29, 29, 0.15); padding: 12px; }
+    .pw-error-message, .pw-error-stack { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #fca5a5; font-family: ui-monospace, monospace; }
+    .pw-error-stack { margin-top: 8px; font-size: 12px; opacity: 0.9; color: #94a3b8; }
+    .empty-msg { color: #888; margin: 0; }
+    .meta { font-size: 12px; color: #666; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>CSTesting Report</h1>
+    <div class="summary-pills">
+      <button type="button" class="pill total active" data-tab="total" aria-pressed="true">Total (4)</button>
+      <button type="button" class="pill passed " data-tab="pass" aria-pressed="false">Passed (3)</button>
+      <button type="button" class="pill failed " data-tab="fail" aria-pressed="false">Failed (0)</button>
+      <button type="button" class="pill skipped " data-tab="skip" aria-pressed="false">Skipped (1)</button>
+    </div>
+  </div>
+
+  <div class="bar-section">
+    <div class="bar-label">Result distribution</div>
+    <div class="bar-container" role="img" aria-label="Bar chart: passed 75%, failed 0%, skipped 25%">
+      <div class="bar-seg passed" style="width: 75%"></div>
+      <div class="bar-seg failed" style="width: 0%"></div>
+      <div class="bar-seg skipped" style="width: 25%"></div>
+    </div>
+    <div class="bar-legend">
+      <span><span class="dot passed"></span> Passed 75.0%</span>
+      <span><span class="dot failed"></span> Failed 0.0%</span>
+      <span><span class="dot skipped"></span> Skipped 25.0%</span>
+    </div>
+  </div>
+
+  <p class="meta">Duration: 20.38s &middot; 2026-02-15T08:25:30.049Z</p>
+  <p class="meta">Click a test case to expand and see executed steps.</p>
+
+  <div id="panel-total" class="panel total-panel active" role="region" aria-label="All tests">
+    <h2>All tests (4)</h2>
+    <div class="panel-content">
+    <div class="test-row test-row-pass" data-expanded="false">
+      <span class="test-dot pass"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">7.58s</span>
+            <span class="test-status status-pass">Passed</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      
+    <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <div class="pw-steps-list">
+        
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">1</span>
+          <span class="pw-step-title">Test case started</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">2</span>
+          <span class="pw-step-title">Goto https://testautomationpractice.blogspot.com/</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">3</span>
+          <span class="pw-step-title">Click //button[text()=&quot;New Tab&quot;]</span>
+        </div>
+      </div>
+    </div>
+      
+    </div>
+      </div>
+    </div>
+    <div class="test-row test-row-pass" data-expanded="false">
+      <span class="test-dot pass"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; frames or ifrmes</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">8.08s</span>
+            <span class="test-status status-pass">Passed</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      
+    <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <div class="pw-steps-list">
+        
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">1</span>
+          <span class="pw-step-title">Test case started</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">2</span>
+          <span class="pw-step-title">Goto https://www.dezlearn.com/nested-iframes-example/</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">3</span>
+          <span class="pw-step-title">Wait for selector iframe#parent_iframe</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">4</span>
+          <span class="pw-step-title">Switch to frame iframe#parent_iframe</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">5</span>
+          <span class="pw-step-title">Switch to frame iframe#iframe1</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">6</span>
+          <span class="pw-step-title">Click #u_5_6 (in frame)</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">7</span>
+          <span class="pw-step-title">Wait for selector #processing (in frame)</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">8</span>
+          <span class="pw-step-title">Get textContent #processing (in frame)</span>
+        </div>
+      </div>
+    </div>
+      
+    </div>
+      </div>
+    </div>
+    <div class="test-row test-row-pass" data-expanded="false">
+      <span class="test-dot pass"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; mouse actions</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">4.72s</span>
+            <span class="test-status status-pass">Passed</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      
+    <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <div class="pw-steps-list">
+        
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">1</span>
+          <span class="pw-step-title">Test case started</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">2</span>
+          <span class="pw-step-title">Goto https://demo.automationtesting.in/Register.html</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">3</span>
+          <span class="pw-step-title">Hover //*[text()=&quot;SwitchTo&quot;]</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">4</span>
+          <span class="pw-step-title">Wait for selector //*[text()=&quot;Alerts&quot;]</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">5</span>
+          <span class="pw-step-title">Click //*[text()=&quot;Alerts&quot;]</span>
+        </div>
+      </div>
+    </div>
+      
+    </div>
+      </div>
+    </div>
+    <div class="test-row test-row-skip" data-expanded="false">
+      <span class="test-dot skip"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">0ms</span>
+            <span class="test-status status-skip">Skipped</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <p class="pw-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+      
+    </div>
+      </div>
+    </div></div>
+  </div>
+  <div id="panel-pass" class="panel pass-panel " role="region" aria-label="Passed tests">
+    <h2>Passed tests (3)</h2>
+    <div class="panel-content">
+    <div class="test-row test-row-pass" data-expanded="false">
+      <span class="test-dot pass"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">7.58s</span>
+            <span class="test-status status-pass">Passed</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      
+    <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <div class="pw-steps-list">
+        
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">1</span>
+          <span class="pw-step-title">Test case started</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">2</span>
+          <span class="pw-step-title">Goto https://testautomationpractice.blogspot.com/</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">3</span>
+          <span class="pw-step-title">Click //button[text()=&quot;New Tab&quot;]</span>
+        </div>
+      </div>
+    </div>
+      
+    </div>
+      </div>
+    </div>
+    <div class="test-row test-row-pass" data-expanded="false">
+      <span class="test-dot pass"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; frames or ifrmes</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">8.08s</span>
+            <span class="test-status status-pass">Passed</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      
+    <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <div class="pw-steps-list">
+        
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">1</span>
+          <span class="pw-step-title">Test case started</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">2</span>
+          <span class="pw-step-title">Goto https://www.dezlearn.com/nested-iframes-example/</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">3</span>
+          <span class="pw-step-title">Wait for selector iframe#parent_iframe</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">4</span>
+          <span class="pw-step-title">Switch to frame iframe#parent_iframe</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">5</span>
+          <span class="pw-step-title">Switch to frame iframe#iframe1</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">6</span>
+          <span class="pw-step-title">Click #u_5_6 (in frame)</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">7</span>
+          <span class="pw-step-title">Wait for selector #processing (in frame)</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">8</span>
+          <span class="pw-step-title">Get textContent #processing (in frame)</span>
+        </div>
+      </div>
+    </div>
+      
+    </div>
+      </div>
+    </div>
+    <div class="test-row test-row-pass" data-expanded="false">
+      <span class="test-dot pass"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; mouse actions</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">4.72s</span>
+            <span class="test-status status-pass">Passed</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      
+    <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <div class="pw-steps-list">
+        
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">1</span>
+          <span class="pw-step-title">Test case started</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">2</span>
+          <span class="pw-step-title">Goto https://demo.automationtesting.in/Register.html</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">3</span>
+          <span class="pw-step-title">Hover //*[text()=&quot;SwitchTo&quot;]</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">4</span>
+          <span class="pw-step-title">Wait for selector //*[text()=&quot;Alerts&quot;]</span>
+        </div>
+        <div class="pw-step-row">
+          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
+          <span class="pw-step-index">5</span>
+          <span class="pw-step-title">Click //*[text()=&quot;Alerts&quot;]</span>
+        </div>
+      </div>
+    </div>
+      
+    </div>
+      </div>
+    </div></div>
+  </div>
+  <div id="panel-fail" class="panel fail-panel " role="region" aria-label="Failed tests">
+    <h2>Failed tests (0)</h2>
+    <div class="panel-content"><p class="empty-msg">No failed tests.</p></div>
+  </div>
+  <div id="panel-skip" class="panel skip-panel " role="region" aria-label="Skipped tests">
+    <h2>Skipped tests (1)</h2>
+    <div class="panel-content">
+    <div class="test-row test-row-skip" data-expanded="false">
+      <span class="test-dot skip"></span>
+      <div class="test-body">
+        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
+          <span class="test-name">root &gt; Browser (CDP) &gt; locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
+          <span class="test-meta">
+            <span class="test-duration" title="Duration">0ms</span>
+            <span class="test-status status-skip">Skipped</span>
+            <span class="test-chevron" aria-hidden="true">▶</span>
+          </span>
+        </div>
+        
+    <div class="test-row-details">
+      <div class="pw-steps-section">
+      <div class="pw-steps-title">Steps</div>
+      <p class="pw-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+      
+    </div>
+      </div>
+    </div></div>
+  </div>
+
+  <script>
+    (function() {
+      var defaultTab = "total";
+      var pills = document.querySelectorAll('.pill[data-tab]');
+      var panels = document.querySelectorAll('.panel');
+      function showTab(tab) {
+        pills.forEach(function(p) {
+          p.classList.toggle('active', p.getAttribute('data-tab') === tab);
+          p.setAttribute('aria-pressed', p.getAttribute('data-tab') === tab ? 'true' : 'false');
+        });
+        panels.forEach(function(panel) {
+          var panelTab = panel.id.replace('panel-', '');
+          panel.classList.toggle('active', panelTab === tab);
+        });
+      }
+      pills.forEach(function(p) {
+        p.addEventListener('click', function() { showTab(p.getAttribute('data-tab')); });
+      });
+      showTab(defaultTab);
+
+      document.querySelectorAll('.test-row-header').forEach(function(header) {
+        function toggle() {
+          var row = header.closest('.test-row');
+          var expanded = row.getAttribute('data-expanded') === 'true';
+          row.setAttribute('data-expanded', !expanded);
+          row.classList.toggle('expanded', !expanded);
+          header.setAttribute('aria-expanded', !expanded);
+        }
+        header.addEventListener('click', toggle);
+        header.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
