@@ -8,5 +8,8 @@
 export { describe, it, beforeAll, afterAll, beforeEach, afterEach, run, resetRunner, step } from './runner';
 export { expect, AssertionError } from './assertions';
 export { createBrowser } from './browser';
+export { runConfigFile, parseConfigFile } from './config-runner';
 export type { RunResult } from './types';
 export type { BrowserApi, CreateBrowserOptions, LocatorApi, DialogHandler, TabInfo, TabHandle, FrameHandle, StepReporter } from './browser';
+export type { ParsedConfig, ConfigStep, ConfigTestCase } from './config-parser';
+export type { RunConfigResult } from './config-runner';

@@ -540,5 +540,6 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
 }
 
 export { launchChrome } from './launch';
+export { resolveSelector } from './cdp-page';
 export type { PageApi, DialogHandler, DialogHandlerResult, DialogOpeningParams } from './cdp-page';
 export type { LaunchOptions, LaunchedChrome } from './launch';

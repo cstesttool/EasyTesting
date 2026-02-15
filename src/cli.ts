@@ -1,16 +1,58 @@
 #!/usr/bin/env node
 // CSTesting CLI — discover and run test files.
-// Usage: npx cstesting [pattern]  or  npx et [pattern]
-// Examples: cstesting  |  cstesting "**/*.test.js"  |  cstesting tests/
+// Usage: npx cstesting [pattern]  or  npx cst init
+// Examples: cstesting  |  cstesting "**/*.test.js"  |  cstesting tests/  |  cstesting init
 
 import * as path from 'path';
 import * as fs from 'fs';
 import { run, resetRunner } from './runner';
 import { AssertionError } from './assertions';
 import { writeReport } from './report';
+import { runConfigFile } from './config-runner';
 import type { RunResult } from './types';
 
 const defaultPattern = '**/*.test.js';
+
+/** Get path to templates folder (next to dist when published). */
+function getTemplatesDir(): string {
+  return path.join(__dirname, '..', 'templates');
+}
+
+/**
+ * Create pages/ and tests/ folders with Page Object Model sample code.
+ * Run: npx cstesting init  or  npx cst init
+ */
+function init(): void {
+  const cwd = process.cwd();
+  const templatesDir = getTemplatesDir();
+
+  if (!fs.existsSync(templatesDir)) {
+    console.error('Templates not found. Run init from a project that has cstesting installed.');
+    process.exit(1);
+  }
+
+  const pagesDir = path.join(cwd, 'pages');
+  const testsDir = path.join(cwd, 'tests');
+  const templatePages = path.join(templatesDir, 'pages');
+  const templateTests = path.join(templatesDir, 'tests');
+
+  if (!fs.existsSync(pagesDir)) fs.mkdirSync(pagesDir, { recursive: true });
+  if (!fs.existsSync(testsDir)) fs.mkdirSync(testsDir, { recursive: true });
+
+  const files: [string, string][] = [
+    [path.join(templatePages, 'HomePage.js'), path.join(pagesDir, 'HomePage.js')],
+    [path.join(templateTests, 'home.test.js'), path.join(testsDir, 'home.test.js')],
+  ];
+
+  for (const [src, dest] of files) {
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, dest);
+      console.log('  Created:', path.relative(cwd, dest));
+    }
+  }
+
+  console.log('\nPage Object Model (POM) structure ready:\n  pages/     – page objects (e.g. HomePage.js)\n  tests/     – test files (*.test.js)\n\nRun tests: npx cstesting tests/\n');
+}
 
 function findTestFiles(pattern: string, cwd: string): string[] {
   const base = pattern.split(/[/\\]/)[0];
@@ -63,9 +105,76 @@ function formatError(err: Error): string {
   return err.stack || err.message;
 }
 
-async function main(): Promise<void> {
+/** Resolve config path: try cwd, then parent (so "node dist/cli.js foo.conf" works from dist). */
+function resolveConfigPath(configPath: string): string | null {
   const cwd = process.cwd();
-  const pattern = process.argv[2] || defaultPattern;
+  let resolved = path.resolve(cwd, configPath);
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) return resolved;
+  if (!configPath.includes(path.sep) && !configPath.includes('/')) {
+    resolved = path.resolve(cwd, '..', configPath);
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) return resolved;
+  }
+  return null;
+}
+
+/** Run a config file (e.g. login.conf) and write report. */
+async function runConfig(configPath: string): Promise<void> {
+  const cwd = process.cwd();
+  const resolved = resolveConfigPath(configPath);
+  if (!resolved) {
+    console.error(`Config file not found: ${configPath}`);
+    console.error(`  (Looked in ${cwd} and parent directory. Run from project root or use: cstesting run path/to/file.conf)`);
+    process.exit(1);
+  }
+  console.log(`Running config: ${path.relative(cwd, resolved) || configPath}\n`);
+  const result = await runConfigFile(resolved);
+  if (result.errors.length > 0) {
+    for (const { suite, test, error } of result.errors) {
+      console.log(`  ✗ ${suite} > ${test}`);
+      console.log(`    ${error.message}`);
+    }
+  }
+  console.log('\n' + '─'.repeat(50));
+  console.log(`  Passed: ${result.passed}  Failed: ${result.failed}  Total: ${result.total}  (${result.duration}ms)`);
+  const reportPath = writeReport(result, { cwd, reportDir: 'report', filename: 'report.html' });
+  console.log(`  Report: ${reportPath}`);
+  if (result.failed > 0) process.exit(1);
+}
+
+async function main(): Promise<void> {
+  const arg = process.argv[2];
+  if (arg === 'init') {
+    init();
+    process.exit(0);
+    return;
+  }
+
+  const cwd = process.cwd();
+
+  // cstesting run login.conf  → run config file
+  if (arg === 'run') {
+    const configPath = process.argv[3];
+    if (!configPath) {
+      console.error('Usage: cstesting run <config.conf>');
+      process.exit(1);
+    }
+    await runConfig(configPath);
+    return;
+  }
+
+  // cstesting login.conf  → run config file if extension is .conf or .config
+  if (arg) {
+    const ext = path.extname(arg).toLowerCase();
+    if (ext === '.conf' || ext === '.config') {
+      const configResolved = resolveConfigPath(arg);
+      if (configResolved) {
+        await runConfig(arg);
+        return;
+      }
+    }
+  }
+
+  const pattern = arg || defaultPattern;
   const resolved = path.resolve(cwd, pattern);
   let testFiles: string[];
   if (pattern.includes('*') || pattern.endsWith('.js') || pattern.endsWith('.ts')) {

@@ -1,6 +1,6 @@
 # CSTesting
 
-A simple, extensible **Node.js testing framework**. Start with a test runner and assertions (like a minimal Jest/Mocha), plus CDP-based browser automation (no Playwright/Cypress).
+A simple, extensible **Node.js testing framework**. Start with a test runner and assertions (like a minimal Jest/Mocha), plus CDP-based browser automation (no Playwright/Cypress). **Config-driven tests** (run full flows from a config file as a single test case) are **not available in any other automation tool**—only in CSTesting; we support login-style flows now and will add all types of actions.
 
 ## For end users — install and run
 
@@ -8,8 +8,14 @@ A simple, extensible **Node.js testing framework**. Start with a test runner and
 # Install in your project
 npm install cstesting
 
+# Scaffold Page Object Model (pages/ + tests/ with sample code)
+npx cstesting init
+# or
+npx cst init
+
 # Run tests (discovers *.test.js / *.spec.js)
 npx cstesting
+npx cstesting tests/
 npx cstesting "**/*.test.js"
 npx cst
 ```
@@ -42,6 +48,60 @@ npx cstesting
 npx cstesting "**/*.test.js"
 npx cstesting tests/
 ```
+
+### Page Object Model (POM)
+
+After installing, scaffold a **pages** and **tests** structure with sample code:
+
+```bash
+npx cstesting init
+# or
+npx cst init
+```
+
+This creates:
+
+- **`pages/`** — page objects (e.g. `HomePage.js`) that wrap selectors and actions
+- **`tests/`** — sample test file (`home.test.js`) that uses the page object
+
+Then run: `npx cstesting tests/`
+
+### Config-driven tests (single file → run → report)
+
+Run tests from a **config file** without writing code. One function: pick file, run steps, get report.
+
+**This is not available in any other automation tool** (Selenium, Playwright, Cypress, etc.). Only CSTesting lets you define and run full flows from a simple config file and get a single test case with a report. Right now we support **login-style flows** (goto, type into inputs, click). **We will add all types of actions** (dropdowns, checkboxes, waits, assertions, etc.) so you can cover any scenario from config alone.
+
+**Config format** (one step per line):
+
+- `# Test case name` — starts a **single test case**; all following steps belong to it until the next `#` (report shows one test per section)
+- `headless=false` or `headed=true` — open browser in **headed mode** (visible window; default is headless)
+- `goto:<url>` — open URL
+- `<label>:<locator>=value:<text>` — type text into element (e.g. `username:#email=value:john`)
+- `click=<locator>` — click element (e.g. `click=button[type="submit"]`)
+
+**Example** `login.conf`:
+
+```conf
+# Login Page (visible browser)
+headed=true
+goto:https://example.com/login
+username:#email=value:user@test.com
+password:#password=value:secret
+click=button[type="submit"]
+```
+
+**Run and get report:**
+
+```bash
+npx cstesting run login.conf
+# or
+npx cstesting login.conf
+```
+
+All steps under a `#` section run as **one test case** in order; pass/fail is for the whole case and the HTML report shows one row per test case with expandable steps.
+
+**Programmatic:** `const { runConfigFile } = require('cstesting'); const result = await runConfigFile('login.conf');`
 
 ## API
 
