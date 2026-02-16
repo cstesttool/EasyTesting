@@ -16,9 +16,15 @@ import {
   buildFrameTextContentExpression,
   buildFrameGetAttributeExpression,
   buildFrameWaitForSelectorExpression,
+  buildFrameSelectOptionExpression,
+  buildFrameCheckUncheckExpression,
+  buildFrameIsVisibleExpression,
+  buildFrameIsDisabledExpression,
+  buildFrameIsEditableExpression,
+  buildFrameIsSelectedExpression,
   throwLocatorError,
 } from './cdp-page';
-import type { LocatorIndex } from './cdp-page';
+import type { LocatorIndex, SelectOption, SelectOptionOrOptions } from './cdp-page';
 
 /** Info for one browser tab (page target). */
 export interface TabInfo {
@@ -45,11 +51,21 @@ export interface FrameHandle {
   hover(selector: string, index?: LocatorIndex): Promise<void>;
   dragAndDrop(sourceSelector: string, targetSelector: string, sourceIndex?: LocatorIndex, targetIndex?: LocatorIndex): Promise<void>;
   type(selector: string, text: string, index?: LocatorIndex): Promise<void>;
+  /** Select option(s) in a <select>. Single option or array for multi-select (replaces current selection). */
+  select(selector: string, option: SelectOptionOrOptions, index?: LocatorIndex): Promise<void>;
+  /** Check a checkbox or radio button. */
+  check(selector: string, index?: LocatorIndex): Promise<void>;
+  /** Uncheck a checkbox. */
+  uncheck(selector: string, index?: LocatorIndex): Promise<void>;
   locator(selector: string): LocatorApi;
   getByAttribute(attribute: string, attributeValue: string): LocatorApi;
   getTextContent(selector: string, index?: LocatorIndex): Promise<string>;
   /** Get attribute value of element in frame (e.g. getAttribute('input', 'value')). Returns '' if missing. */
   getAttribute(selector: string, attributeName: string, index?: LocatorIndex): Promise<string>;
+  isVisible(selector: string, index?: LocatorIndex): Promise<boolean>;
+  isDisabled(selector: string, index?: LocatorIndex): Promise<boolean>;
+  isEditable(selector: string, index?: LocatorIndex): Promise<boolean>;
+  isSelected(selector: string, index?: LocatorIndex): Promise<boolean>;
 }
 
 /**
@@ -67,12 +83,22 @@ export interface TabHandle {
   hover(selector: string): Promise<void>;
   dragAndDrop(sourceSelector: string, targetSelector: string): Promise<void>;
   type(selector: string, text: string): Promise<void>;
+  /** Select option(s) in a <select>. Single option or array for multi-select. */
+  select(selector: string, option: SelectOptionOrOptions): Promise<void>;
+  check(selector: string): Promise<void>;
+  uncheck(selector: string): Promise<void>;
   pressKey(key: string): Promise<void>;
   locator(selector: string): LocatorApi;
   getByAttribute(attribute: string, attributeValue: string): LocatorApi;
   waitForLoad(): Promise<void>;
+  /** Fixed delay (hard wait) for the given milliseconds. */
+  sleep(msOrOptions: number | { timeout: number }): Promise<void>;
   content(): Promise<string>;
   evaluate<T>(expression: string): Promise<T>;
+  isVisible(selector: string): Promise<boolean>;
+  isDisabled(selector: string): Promise<boolean>;
+  isEditable(selector: string): Promise<boolean>;
+  isSelected(selector: string): Promise<boolean>;
   /** Close only this tab's connection (does not close the browser). */
   close(): Promise<void>;
 }
@@ -115,11 +141,25 @@ export interface LocatorApi {
   /** Drag this element to the element matching targetSelector. */
   dragTo(targetSelector: string): Promise<void>;
   type(text: string): Promise<void>;
+  /** Select option(s) in this <select>. Single option or array for multi-select. */
+  select(option: SelectOptionOrOptions): Promise<void>;
+  /** Check this checkbox or radio button. */
+  check(): Promise<void>;
+  /** Uncheck this checkbox. */
+  uncheck(): Promise<void>;
   pressKey(key: string): Promise<void>;
   /** Get the text content of the matched element (same strict/index rules as click/type). */
   textContent(): Promise<string>;
   /** Get the value of an attribute (e.g. getAttribute('value')). Returns '' if attribute is missing. */
   getAttribute(attributeName: string): Promise<string>;
+  /** Whether the element is visible (not hidden by CSS). */
+  isVisible(): Promise<boolean>;
+  /** Whether the element is disabled. */
+  isDisabled(): Promise<boolean>;
+  /** Whether the element is editable (input/textarea not disabled and not readonly). */
+  isEditable(): Promise<boolean>;
+  /** Whether checkbox/radio is checked, option is selected, or select has a selection. */
+  isSelected(): Promise<boolean>;
   /** Use the first matching element (when multiple match). */
   first(): LocatorApi;
   /** Use the last matching element. */
@@ -136,6 +176,12 @@ export interface BrowserApi {
   hover(selector: string): Promise<void>;
   dragAndDrop(sourceSelector: string, targetSelector: string): Promise<void>;
   type(selector: string, text: string): Promise<void>;
+  /** Select option(s) in a <select>. Single option or array for multi-select (replaces current selection). */
+  select(selector: string, option: SelectOptionOrOptions): Promise<void>;
+  /** Check a checkbox or radio button. */
+  check(selector: string): Promise<void>;
+  /** Uncheck a checkbox. */
+  uncheck(selector: string): Promise<void>;
   pressKey(key: string): Promise<void>;
   /** Get a locator for a selector — then use .click(), .type(text), .pressKey(key) on it. */
   locator(selector: string): LocatorApi;
@@ -146,6 +192,16 @@ export interface BrowserApi {
   waitForLoad(): Promise<void>;
   /** Wait until selector matches an element (CSS, XPath, id=, name=). Throws after timeout ms (default 30000). */
   waitForSelector(selector: string, options?: { timeout?: number }): Promise<void>;
+  /** Fixed delay (hard wait) for the given milliseconds. Use sparingly; prefer waitForSelector when possible. */
+  sleep(msOrOptions: number | { timeout: number }): Promise<void>;
+  /** Whether the matched element is visible. */
+  isVisible(selector: string): Promise<boolean>;
+  /** Whether the matched element is disabled. */
+  isDisabled(selector: string): Promise<boolean>;
+  /** Whether the matched element is editable. */
+  isEditable(selector: string): Promise<boolean>;
+  /** Whether checkbox/radio is checked, option selected, or select has a selection. */
+  isSelected(selector: string): Promise<boolean>;
   content(): Promise<string>;
   evaluate<T>(expression: string): Promise<T>;
   /**
@@ -239,6 +295,18 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
         onStep?.(`Type in ${selector}`);
         return page.type(selector, text, index);
       },
+      select: async (option: SelectOptionOrOptions) => {
+        onStep?.(`Select in ${selector}`);
+        return page.select(selector, option, index);
+      },
+      check: async () => {
+        onStep?.(`Check ${selector}`);
+        return page.check(selector, index);
+      },
+      uncheck: async () => {
+        onStep?.(`Uncheck ${selector}`);
+        return page.uncheck(selector, index);
+      },
       pressKey: (key: string) => page.pressKey(key),
       textContent: async () => {
         onStep?.(`Get textContent ${selector}`);
@@ -248,6 +316,10 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
         onStep?.(`Get attribute ${attributeName} of ${selector}`);
         return page.getAttribute(selector, attributeName, index);
       },
+      isVisible: () => page.isVisible(selector, index),
+      isDisabled: () => page.isDisabled(selector, index),
+      isEditable: () => page.isEditable(selector, index),
+      isSelected: () => page.isSelected(selector, index),
       first: () => createLocator(selector, 'first'),
       last: () => createLocator(selector, 'last'),
       nth: (n: number) => createLocator(selector, n),
@@ -273,9 +345,16 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
         hover: () => tabPage.hover(selector, index),
         dragTo: (targetSelector: string) => tabPage.dragAndDrop(selector, targetSelector, index),
         type: (text: string) => tabPage.type(selector, text, index),
+        select: (option: SelectOptionOrOptions) => tabPage.select(selector, option, index),
+        check: () => tabPage.check(selector, index),
+        uncheck: () => tabPage.uncheck(selector, index),
         pressKey: (key: string) => tabPage.pressKey(key),
         textContent: () => tabPage.getTextContent(selector, index),
         getAttribute: (attributeName: string) => tabPage.getAttribute(selector, attributeName, index),
+        isVisible: () => tabPage.isVisible(selector, index),
+        isDisabled: () => tabPage.isDisabled(selector, index),
+        isEditable: () => tabPage.isEditable(selector, index),
+        isSelected: () => tabPage.isSelected(selector, index),
         first: () => tabCreateLocator(selector, 'first'),
         last: () => tabCreateLocator(selector, 'last'),
         nth: (n: number) => tabCreateLocator(selector, n),
@@ -296,12 +375,23 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       hover: (selector: string) => tabPage.hover(selector),
       dragAndDrop: (source: string, target: string) => tabPage.dragAndDrop(source, target),
       type: (selector: string, text: string) => tabPage.type(selector, text),
+      select: (selector: string, option: SelectOptionOrOptions) => tabPage.select(selector, option),
+      check: (selector: string) => tabPage.check(selector),
+      uncheck: (selector: string) => tabPage.uncheck(selector),
       pressKey: (key: string) => tabPage.pressKey(key),
       locator: (selector: string) => tabCreateLocator(selector),
       getByAttribute: tabGetByAttribute,
       waitForLoad: () => tabPage.waitForLoad(),
+      sleep: async (msOrOptions: number | { timeout: number }) => {
+        const ms = typeof msOrOptions === 'number' ? msOrOptions : msOrOptions.timeout;
+        return new Promise((r) => setTimeout(r, ms));
+      },
       content: () => tabPage.content(),
       evaluate: <T>(expression: string) => tabPage.evaluate<T>(expression),
+      isVisible: (sel: string) => tabPage.isVisible(sel),
+      isDisabled: (sel: string) => tabPage.isDisabled(sel),
+      isEditable: (sel: string) => tabPage.isEditable(sel),
+      isSelected: (sel: string) => tabPage.isSelected(sel),
       close: () => tabClient.close(),
     };
   }
@@ -405,6 +495,65 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       if (value.error) throwLocatorError(value as { error: string; count: number; selector: string; index?: number }, selector);
       return value.attributeValue != null ? String(value.attributeValue) : '';
     }
+    async function frameSelect(selector: string, option: SelectOptionOrOptions, index?: LocatorIndex): Promise<void> {
+      frameStep(`Select ${selector}`);
+      const expr = buildFrameSelectOptionExpression(chain, selector, option, index);
+      const value = await page.evaluate<{ ok?: boolean; error?: string; count?: number; selector?: string; index?: number }>(expr);
+      if (!value || typeof value !== 'object') throw new Error(`Select failed: could not resolve \`${selector}\``);
+      if (value.error === 'frame-not-found') throw new Error('Frame not found or cross-origin');
+      if (value.error === 'not-select') throw new Error(`Select failed: element is not a <select>: \`${selector}\``);
+      if (value.error) throwLocatorError({ error: value.error, count: value.count ?? 0, selector: value.selector ?? selector, index: value.index }, selector);
+    }
+    async function frameCheck(selector: string, index?: LocatorIndex): Promise<void> {
+      frameStep(`Check ${selector}`);
+      const expr = buildFrameCheckUncheckExpression(chain, selector, true, index);
+      const value = await page.evaluate<{ ok?: boolean; error?: string; count?: number; selector?: string; index?: number }>(expr);
+      if (!value || typeof value !== 'object') throw new Error(`Check failed: could not resolve \`${selector}\``);
+      if (value.error === 'frame-not-found') throw new Error('Frame not found or cross-origin');
+      if (value.error === 'not-checkable') throw new Error(`Check failed: element is not a checkbox or radio: \`${selector}\``);
+      if (value.error) throwLocatorError({ error: value.error, count: value.count ?? 0, selector: value.selector ?? selector, index: value.index }, selector);
+    }
+    async function frameUncheck(selector: string, index?: LocatorIndex): Promise<void> {
+      frameStep(`Uncheck ${selector}`);
+      const expr = buildFrameCheckUncheckExpression(chain, selector, false, index);
+      const value = await page.evaluate<{ ok?: boolean; error?: string; count?: number; selector?: string; index?: number }>(expr);
+      if (!value || typeof value !== 'object') throw new Error(`Uncheck failed: could not resolve \`${selector}\``);
+      if (value.error === 'frame-not-found') throw new Error('Frame not found or cross-origin');
+      if (value.error === 'not-checkable') throw new Error(`Uncheck failed: element is not a checkbox or radio: \`${selector}\``);
+      if (value.error) throwLocatorError({ error: value.error, count: value.count ?? 0, selector: value.selector ?? selector, index: value.index }, selector);
+    }
+    async function frameIsVisible(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const expr = buildFrameIsVisibleExpression(chain, selector, index);
+      const value = await page.evaluate<{ value?: boolean; error?: string; count?: number; selector?: string; index?: number }>(expr);
+      if (!value || typeof value !== 'object') return false;
+      if (value.error === 'frame-not-found') throw new Error('Frame not found or cross-origin');
+      if (value.error) throwLocatorError({ error: value.error, count: value.count ?? 0, selector: value.selector ?? selector, index: value.index }, selector);
+      return value.value === true;
+    }
+    async function frameIsDisabled(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const expr = buildFrameIsDisabledExpression(chain, selector, index);
+      const value = await page.evaluate<{ value?: boolean; error?: string; count?: number; selector?: string; index?: number }>(expr);
+      if (!value || typeof value !== 'object') return false;
+      if (value.error === 'frame-not-found') throw new Error('Frame not found or cross-origin');
+      if (value.error) throwLocatorError({ error: value.error, count: value.count ?? 0, selector: value.selector ?? selector, index: value.index }, selector);
+      return value.value === true;
+    }
+    async function frameIsEditable(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const expr = buildFrameIsEditableExpression(chain, selector, index);
+      const value = await page.evaluate<{ value?: boolean; error?: string; count?: number; selector?: string; index?: number }>(expr);
+      if (!value || typeof value !== 'object') return false;
+      if (value.error === 'frame-not-found') throw new Error('Frame not found or cross-origin');
+      if (value.error) throwLocatorError({ error: value.error, count: value.count ?? 0, selector: value.selector ?? selector, index: value.index }, selector);
+      return value.value === true;
+    }
+    async function frameIsSelected(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const expr = buildFrameIsSelectedExpression(chain, selector, index);
+      const value = await page.evaluate<{ value?: boolean; error?: string; count?: number; selector?: string; index?: number }>(expr);
+      if (!value || typeof value !== 'object') return false;
+      if (value.error === 'frame-not-found') throw new Error('Frame not found or cross-origin');
+      if (value.error) throwLocatorError({ error: value.error, count: value.count ?? 0, selector: value.selector ?? selector, index: value.index }, selector);
+      return value.value === true;
+    }
     function frameCreateLocator(selector: string, index?: LocatorIndex): LocatorApi {
       return {
         click: () => frameClick(selector, index),
@@ -413,9 +562,16 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
         hover: () => frameHover(selector, index),
         dragTo: (targetSelector: string) => frameDragAndDrop(selector, targetSelector, index),
         type: (text: string) => frameType(selector, text, index),
+        select: (option: SelectOptionOrOptions) => frameSelect(selector, option, index),
+        check: () => frameCheck(selector, index),
+        uncheck: () => frameUncheck(selector, index),
         pressKey: (key: string) => page.pressKey(key),
         textContent: () => frameGetTextContent(selector, index),
         getAttribute: (attributeName: string) => frameGetAttribute(selector, attributeName, index),
+        isVisible: () => frameIsVisible(selector, index),
+        isDisabled: () => frameIsDisabled(selector, index),
+        isEditable: () => frameIsEditable(selector, index),
+        isSelected: () => frameIsSelected(selector, index),
         first: () => frameCreateLocator(selector, 'first'),
         last: () => frameCreateLocator(selector, 'last'),
         nth: (n: number) => frameCreateLocator(selector, n),
@@ -455,10 +611,17 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       hover: frameHover,
       dragAndDrop: frameDragAndDrop,
       type: frameType,
+      select: frameSelect,
+      check: frameCheck,
+      uncheck: frameUncheck,
       locator: (selector: string) => frameCreateLocator(selector),
       getByAttribute: frameGetByAttribute,
       getTextContent: frameGetTextContent,
       getAttribute: frameGetAttribute,
+      isVisible: frameIsVisible,
+      isDisabled: frameIsDisabled,
+      isEditable: frameIsEditable,
+      isSelected: frameIsSelected,
     };
   }
 
@@ -509,6 +672,22 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       onStep?.(`Type in ${selector}`);
       return page.type(selector, text);
     },
+    select: async (selector: string, option: SelectOptionOrOptions) => {
+      onStep?.(`Select ${selector}`);
+      return page.select(selector, option);
+    },
+    check: async (selector: string) => {
+      onStep?.(`Check ${selector}`);
+      return page.check(selector);
+    },
+    uncheck: async (selector: string) => {
+      onStep?.(`Uncheck ${selector}`);
+      return page.uncheck(selector);
+    },
+    isVisible: (selector: string) => page.isVisible(selector),
+    isDisabled: (selector: string) => page.isDisabled(selector),
+    isEditable: (selector: string) => page.isEditable(selector),
+    isSelected: (selector: string) => page.isSelected(selector),
     pressKey: (key: string) => page.pressKey(key),
     locator: (selector: string) => createLocator(selector),
     getByAttribute: (attribute: string, attributeValue: string) => getByAttribute(attribute, attributeValue),
@@ -520,6 +699,11 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
     waitForSelector: async (selector: string, options?: { timeout?: number }) => {
       onStep?.(`Wait for selector ${selector}`);
       return page.waitForSelector(selector, options);
+    },
+    sleep: async (msOrOptions: number | { timeout: number }) => {
+      const ms = typeof msOrOptions === 'number' ? msOrOptions : msOrOptions.timeout;
+      onStep?.(`Sleep ${ms}ms`);
+      return new Promise((r) => setTimeout(r, ms));
     },
     content: () => page.content(),
     evaluate: <T>(expression: string) => page.evaluate<T>(expression),
@@ -541,5 +725,5 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
 
 export { launchChrome } from './launch';
 export { resolveSelector } from './cdp-page';
-export type { PageApi, DialogHandler, DialogHandlerResult, DialogOpeningParams } from './cdp-page';
+export type { PageApi, DialogHandler, DialogHandlerResult, DialogOpeningParams, SelectOption, SelectOptionOrOptions } from './cdp-page';
 export type { LaunchOptions, LaunchedChrome } from './launch';

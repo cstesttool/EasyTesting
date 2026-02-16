@@ -37,6 +37,12 @@ export type CDPClient = {
   close(): Promise<void>;
 };
 
+/** Option for select(): choose by visible text, by 0-based index, or by option value. */
+export type SelectOption = { label: string } | { index: number } | { value: string };
+
+/** Single option or array of options (array = multi-select: replace selection with the given set). */
+export type SelectOptionOrOptions = SelectOption | SelectOption[];
+
 export interface PageApi {
   goto(url: string): Promise<void>;
   click(selector: string, index?: LocatorIndex): Promise<void>;
@@ -45,6 +51,12 @@ export interface PageApi {
   hover(selector: string, index?: LocatorIndex): Promise<void>;
   dragAndDrop(sourceSelector: string, targetSelector: string, sourceIndex?: LocatorIndex, targetIndex?: LocatorIndex): Promise<void>;
   type(selector: string, text: string, index?: LocatorIndex): Promise<void>;
+  /** Select option(s) in a <select>. Single option or array for multi-select (replaces current selection). */
+  select(selector: string, option: SelectOptionOrOptions, index?: LocatorIndex): Promise<void>;
+  /** Check a checkbox or radio button (set checked = true). */
+  check(selector: string, index?: LocatorIndex): Promise<void>;
+  /** Uncheck a checkbox (set checked = false). For radio, use check(selector) on another radio in the group. */
+  uncheck(selector: string, index?: LocatorIndex): Promise<void>;
   pressKey(key: string): Promise<void>;
   waitForLoad(): Promise<void>;
   /** Wait until selector matches at least one element (CSS, XPath, id=, name=). Throws after timeout ms. */
@@ -54,6 +66,14 @@ export interface PageApi {
   getTextContent(selector: string, index?: LocatorIndex): Promise<string>;
   /** Get attribute value of the matched element (same strict/index rules as click). Returns '' if attribute is missing. */
   getAttribute(selector: string, attributeName: string, index?: LocatorIndex): Promise<string>;
+  /** Whether the matched element is visible (not hidden by display/visibility/opacity, has non-zero size). */
+  isVisible(selector: string, index?: LocatorIndex): Promise<boolean>;
+  /** Whether the matched element is disabled (e.g. input, button). */
+  isDisabled(selector: string, index?: LocatorIndex): Promise<boolean>;
+  /** Whether the matched element is editable (input/textarea not disabled and not readonly). */
+  isEditable(selector: string, index?: LocatorIndex): Promise<boolean>;
+  /** Whether checkbox/radio is checked, option is selected, or select has a selected option. */
+  isSelected(selector: string, index?: LocatorIndex): Promise<boolean>;
 }
 
 function getCenter(rect: { x: number; y: number; width: number; height: number }): { x: number; y: number } {
@@ -313,6 +333,118 @@ function buildGetAttributeWithIndexExpressionXPath(xpath: string, attributeName:
   })()`;
 }
 
+/** Build expression that finds one element (strict or by index) and returns { value: boolean } or error. Used for isVisible, isDisabled, isEditable, isSelected. */
+function buildElementStateExpression(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  useXPath: boolean,
+  docVar: string,
+  stateCheck: string
+): string {
+  const sel = JSON.stringify(selector);
+  const idxExpr =
+    locatorIndex === undefined || locatorIndex === null
+      ? null
+      : locatorIndex === 'first'
+        ? 0
+        : locatorIndex === 'last'
+          ? 'list.length - 1'
+          : typeof locatorIndex === 'number'
+            ? locatorIndex
+            : null;
+  const viewVar = docVar === 'document' ? 'window' : 'doc.defaultView';
+  const findCss =
+    idxExpr === null
+      ? `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (list.length > 1) return { error: 'strict', count: list.length, selector: ${sel} }; return list[0]; })()`
+      : `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= list.length) return { error: 'out-of-range', count: list.length, index: idx, selector: ${sel} }; return list[idx]; })()`;
+  const findXpath =
+    idxExpr === null
+      ? `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); if (result.snapshotLength === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (result.snapshotLength > 1) return { error: 'strict', count: result.snapshotLength, selector: ${sel} }; return result.snapshotItem(0); })()`
+      : `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); var len = result.snapshotLength; if (len === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= len) return { error: 'out-of-range', count: len, index: idx, selector: ${sel} }; return result.snapshotItem(idx); })()`;
+  const getEl = useXPath ? findXpath : findCss;
+  const stateCode = stateCheck.replace(/\$VIEW\$/g, viewVar);
+  return `(function(){ var el = ${getEl}; if (el && el.error) return el; ${stateCode} })()`;
+}
+
+function buildIsVisibleExpression(selector: string, locatorIndex: LocatorIndex | undefined, useXPath: boolean, docVar: string = 'document'): string {
+  const stateCheck = `var r = el.getBoundingClientRect(); if (r.width === 0 && r.height === 0) return { value: false }; var s = $VIEW$.getComputedStyle(el); if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) return { value: false }; return { value: true };`;
+  return buildElementStateExpression(selector, locatorIndex, useXPath, docVar, stateCheck);
+}
+
+function buildIsDisabledExpression(selector: string, locatorIndex: LocatorIndex | undefined, useXPath: boolean, docVar: string = 'document'): string {
+  const stateCheck = `return { value: el.disabled === true };`;
+  return buildElementStateExpression(selector, locatorIndex, useXPath, docVar, stateCheck);
+}
+
+function buildIsEditableExpression(selector: string, locatorIndex: LocatorIndex | undefined, useXPath: boolean, docVar: string = 'document'): string {
+  const stateCheck = `if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return { value: !el.disabled && !el.readOnly }; if (el.isContentEditable) return { value: true }; return { value: false };`;
+  return buildElementStateExpression(selector, locatorIndex, useXPath, docVar, stateCheck);
+}
+
+function buildIsSelectedExpression(selector: string, locatorIndex: LocatorIndex | undefined, useXPath: boolean, docVar: string = 'document'): string {
+  const stateCheck = `if (el.tagName === 'INPUT') { var t = (el.type || '').toLowerCase(); if (t === 'checkbox' || t === 'radio') return { value: el.checked }; } if (el.tagName === 'OPTION') return { value: el.selected }; if (el.tagName === 'SELECT') return { value: el.selectedIndex >= 0 }; return { value: false };`;
+  return buildElementStateExpression(selector, locatorIndex, useXPath, docVar, stateCheck);
+}
+
+/** Inner code for element state (var el = find(); if error return; stateCheck). Used so frame can wrap with var doc = getDoc(); */
+function buildElementStateInner(selector: string, locatorIndex: LocatorIndex | undefined, useXPath: boolean, docVar: string, stateCheck: string): string {
+  const sel = JSON.stringify(selector);
+  const idxExpr =
+    locatorIndex === undefined || locatorIndex === null
+      ? null
+      : locatorIndex === 'first'
+        ? 0
+        : locatorIndex === 'last'
+          ? 'list.length - 1'
+          : typeof locatorIndex === 'number'
+            ? locatorIndex
+            : null;
+  const findCss =
+    idxExpr === null
+      ? `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (list.length > 1) return { error: 'strict', count: list.length, selector: ${sel} }; return list[0]; })()`
+      : `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= list.length) return { error: 'out-of-range', count: list.length, index: idx, selector: ${sel} }; return list[idx]; })()`;
+  const findXpath =
+    idxExpr === null
+      ? `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); if (result.snapshotLength === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (result.snapshotLength > 1) return { error: 'strict', count: result.snapshotLength, selector: ${sel} }; return result.snapshotItem(0); })()`
+      : `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); var len = result.snapshotLength; if (len === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= len) return { error: 'out-of-range', count: len, index: idx, selector: ${sel} }; return result.snapshotItem(idx); })()`;
+  const getEl = useXPath ? findXpath : findCss;
+  const stateCode = stateCheck.replace(/\$VIEW\$/g, docVar === 'document' ? 'window' : 'doc.defaultView');
+  return `var el = ${getEl}; if (el && el.error) return el; ${stateCode}`;
+}
+
+/** Frame-scoped state expressions: wrap inner with var doc = getDoc(); */
+function buildFrameElementStateExpression(
+  chain: string[],
+  elementSelector: string,
+  index: LocatorIndex | undefined,
+  stateCheck: string
+): string {
+  const getDoc = buildFrameChainGetDocExpression(chain);
+  const resolved = resolveSelector(elementSelector);
+  const useXPath = isXPath(elementSelector);
+  const locIndex = index === 0 ? 'first' : index;
+  const inner = buildElementStateInner(resolved, locIndex, useXPath, 'doc', stateCheck);
+  return `(function(){ var doc = ${getDoc}; ${inner} })()`;
+}
+
+export function buildFrameIsVisibleExpression(chain: string | string[], elementSelector: string, index?: LocatorIndex): string {
+  const ch = Array.isArray(chain) ? chain : [chain];
+  return buildFrameElementStateExpression(ch, elementSelector, index,
+    `var r = el.getBoundingClientRect(); if (r.width === 0 && r.height === 0) return { value: false }; var s = $VIEW$.getComputedStyle(el); if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) return { value: false }; return { value: true };`);
+}
+export function buildFrameIsDisabledExpression(chain: string | string[], elementSelector: string, index?: LocatorIndex): string {
+  const ch = Array.isArray(chain) ? chain : [chain];
+  return buildFrameElementStateExpression(ch, elementSelector, index, `return { value: el.disabled === true };`);
+}
+export function buildFrameIsEditableExpression(chain: string | string[], elementSelector: string, index?: LocatorIndex): string {
+  const ch = Array.isArray(chain) ? chain : [chain];
+  return buildFrameElementStateExpression(ch, elementSelector, index, `if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return { value: !el.disabled && !el.readOnly }; if (el.isContentEditable) return { value: true }; return { value: false };`);
+}
+export function buildFrameIsSelectedExpression(chain: string | string[], elementSelector: string, index?: LocatorIndex): string {
+  const ch = Array.isArray(chain) ? chain : [chain];
+  return buildFrameElementStateExpression(ch, elementSelector, index, `if (el.tagName === 'INPUT') { var t = (el.type || '').toLowerCase(); if (t === 'checkbox' || t === 'radio') return { value: el.checked }; } if (el.tagName === 'OPTION') return { value: el.selected }; if (el.tagName === 'SELECT') return { value: el.selectedIndex >= 0 }; return { value: false };`);
+}
+
 /** Chain = list of iframe selectors from root to leaf (e.g. ['iframe#outer', 'iframe#inner'] for nested). */
 function buildFrameChainGetDocExpression(chain: string[]): string {
   if (chain.length === 0) return 'document';
@@ -490,6 +622,260 @@ export function buildFrameGetAttributeExpression(
   })()`;
 }
 
+/** Build the inner block for select option (assumes docVar is in scope). Returns code that assigns to el, sets option, dispatches change, returns { error } or { ok: true }. */
+function buildSelectOptionInnerBlock(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  option: SelectOption,
+  useXPath: boolean,
+  docVar: string
+): string {
+  const sel = JSON.stringify(selector);
+  const idxExpr =
+    locatorIndex === undefined || locatorIndex === null
+      ? null
+      : locatorIndex === 'first'
+        ? 0
+        : locatorIndex === 'last'
+          ? 'list.length - 1'
+          : typeof locatorIndex === 'number'
+            ? locatorIndex
+            : null;
+  const findSelectCss =
+    idxExpr === null
+      ? `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (list.length > 1) return { error: 'strict', count: list.length, selector: ${sel} }; return list[0]; })()`
+      : `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= list.length) return { error: 'out-of-range', count: list.length, index: idx, selector: ${sel} }; return list[idx]; })()`;
+  const findSelectXpath =
+    idxExpr === null
+      ? `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); if (result.snapshotLength === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (result.snapshotLength > 1) return { error: 'strict', count: result.snapshotLength, selector: ${sel} }; return result.snapshotItem(0); })()`
+      : `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); var len = result.snapshotLength; if (len === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= len) return { error: 'out-of-range', count: len, index: idx, selector: ${sel} }; return result.snapshotItem(idx); })()`;
+  const getSelect = useXPath ? findSelectXpath : findSelectCss;
+  let setOption: string;
+  if ('label' in option) {
+    const label = JSON.stringify(option.label);
+    setOption = `var opts = el.options; for (var i = 0; i < opts.length; i++) { if (opts[i].textContent.trim() === ${label}) { el.selectedIndex = i; break; } }`;
+  } else if ('value' in option) {
+    const value = JSON.stringify(option.value);
+    setOption = `el.value = ${value};`;
+  } else {
+    setOption = `el.selectedIndex = ${option.index};`;
+  }
+  return `var el = ${getSelect};
+    if (el && el.error) return el;
+    if (!el || el.tagName !== 'SELECT') return { error: 'not-select', selector: ${sel} };
+    ${setOption}
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { ok: true };`;
+}
+
+/** Build the inner block for multi-select: clear all, then set each option in options[] as selected, dispatch change. */
+function buildSelectOptionMultiInnerBlock(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  options: SelectOption[],
+  useXPath: boolean,
+  docVar: string
+): string {
+  const sel = JSON.stringify(selector);
+  const idxExpr =
+    locatorIndex === undefined || locatorIndex === null
+      ? null
+      : locatorIndex === 'first'
+        ? 0
+        : locatorIndex === 'last'
+          ? 'list.length - 1'
+          : typeof locatorIndex === 'number'
+            ? locatorIndex
+            : null;
+  const findSelectCss =
+    idxExpr === null
+      ? `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (list.length > 1) return { error: 'strict', count: list.length, selector: ${sel} }; return list[0]; })()`
+      : `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= list.length) return { error: 'out-of-range', count: list.length, index: idx, selector: ${sel} }; return list[idx]; })()`;
+  const findSelectXpath =
+    idxExpr === null
+      ? `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); if (result.snapshotLength === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (result.snapshotLength > 1) return { error: 'strict', count: result.snapshotLength, selector: ${sel} }; return result.snapshotItem(0); })()`
+      : `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); var len = result.snapshotLength; if (len === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= len) return { error: 'out-of-range', count: len, index: idx, selector: ${sel} }; return result.snapshotItem(idx); })()`;
+  const getSelect = useXPath ? findSelectXpath : findSelectCss;
+  const setParts: string[] = [];
+  for (const opt of options) {
+    if ('label' in opt) {
+      const label = JSON.stringify(opt.label);
+      setParts.push(`for (var i = 0; i < opts.length; i++) { if (opts[i].textContent.trim() === ${label}) { opts[i].selected = true; break; } }`);
+    } else if ('value' in opt) {
+      const value = JSON.stringify(opt.value);
+      setParts.push(`for (var i = 0; i < opts.length; i++) { if (opts[i].value === ${value}) { opts[i].selected = true; break; } }`);
+    } else {
+      setParts.push(`if (opts[${opt.index}] !== undefined) opts[${opt.index}].selected = true;`);
+    }
+  }
+  const setOptions = setParts.join(' ');
+  return `var el = ${getSelect};
+    if (el && el.error) return el;
+    if (!el || el.tagName !== 'SELECT') return { error: 'not-select', selector: ${sel} };
+    var opts = el.options;
+    for (var j = 0; j < opts.length; j++) opts[j].selected = false;
+    ${setOptions}
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { ok: true };`;
+}
+
+/** Build expression that finds a <select>, sets the chosen option (by label, value, or index), dispatches change, returns { error } or { ok: true }. docVar = document context (e.g. 'document' or 'doc' for frame). */
+function buildSelectOptionExpression(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  option: SelectOption,
+  useXPath: boolean,
+  docVar: string = 'document'
+): string {
+  const inner = buildSelectOptionInnerBlock(selector, locatorIndex, option, useXPath, docVar);
+  return `(function(){ ${inner} })()`;
+}
+
+/** Build expression for multi-select (array of options). Replaces current selection. */
+function buildSelectOptionMultiExpression(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  options: SelectOption[],
+  useXPath: boolean,
+  docVar: string = 'document'
+): string {
+  const inner = buildSelectOptionMultiInnerBlock(selector, locatorIndex, options, useXPath, docVar);
+  return `(function(){ ${inner} })()`;
+}
+
+/** Build expression to select option(s) inside a frame (doc = frame document). Single option or array for multi-select. */
+export function buildFrameSelectOptionExpression(
+  iframeSelectorOrChain: string | string[],
+  elementSelector: string,
+  option: SelectOptionOrOptions,
+  index?: LocatorIndex
+): string {
+  const chain = Array.isArray(iframeSelectorOrChain) ? iframeSelectorOrChain : [iframeSelectorOrChain];
+  const getDoc = buildFrameChainGetDocExpression(chain);
+  const resolved = resolveSelector(elementSelector);
+  const useXPath = isXPath(elementSelector);
+  const locIndex = index === 0 ? 'first' : index;
+  const inner = Array.isArray(option)
+    ? buildSelectOptionMultiInnerBlock(resolved, locIndex, option, useXPath, 'doc')
+    : buildSelectOptionInnerBlock(resolved, locIndex, option, useXPath, 'doc');
+  return `(function(){ var doc = ${getDoc}; ${inner} })()`;
+}
+
+/** Build expression that returns { ok: true } if state already matches, or { x, y } (center) when we need to click to toggle. Uses real click so checkboxes work on all sites. */
+function buildCheckUncheckGetActionInnerBlock(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  checked: boolean,
+  useXPath: boolean,
+  docVar: string
+): string {
+  const sel = JSON.stringify(selector);
+  const idxExpr =
+    locatorIndex === undefined || locatorIndex === null
+      ? null
+      : locatorIndex === 'first'
+        ? 0
+        : locatorIndex === 'last'
+          ? 'list.length - 1'
+          : typeof locatorIndex === 'number'
+            ? locatorIndex
+            : null;
+  const findCss =
+    idxExpr === null
+      ? `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (list.length > 1) return { error: 'strict', count: list.length, selector: ${sel} }; return list[0]; })()`
+      : `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= list.length) return { error: 'out-of-range', count: list.length, index: idx, selector: ${sel} }; return list[idx]; })()`;
+  const findXpath =
+    idxExpr === null
+      ? `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); if (result.snapshotLength === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (result.snapshotLength > 1) return { error: 'strict', count: result.snapshotLength, selector: ${sel} }; return result.snapshotItem(0); })()`
+      : `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); var len = result.snapshotLength; if (len === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= len) return { error: 'out-of-range', count: len, index: idx, selector: ${sel} }; return result.snapshotItem(idx); })()`;
+  const getEl = useXPath ? findXpath : findCss;
+  const needClick = checked ? '!el.checked' : 'el.checked';
+  return `var el = ${getEl};
+    if (el && el.error) return el;
+    if (!el || el.tagName !== 'INPUT') return { error: 'not-checkable', selector: ${sel} };
+    var t = (el.type || '').toLowerCase();
+    if (t !== 'checkbox' && t !== 'radio') return { error: 'not-checkable', selector: ${sel} };
+    if (${needClick}) { el.scrollIntoView({ block: 'center', inline: 'center' }); var r = el.getBoundingClientRect(); return { x: r.x + r.width/2, y: r.y + r.height/2 }; }
+    return { ok: true };`;
+}
+
+/** Build inner block for check/uncheck: find element, ensure input type checkbox or radio, set checked, dispatch change+click. (Used for frame; main page uses real click.) */
+function buildCheckUncheckInnerBlock(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  checked: boolean,
+  useXPath: boolean,
+  docVar: string
+): string {
+  const sel = JSON.stringify(selector);
+  const idxExpr =
+    locatorIndex === undefined || locatorIndex === null
+      ? null
+      : locatorIndex === 'first'
+        ? 0
+        : locatorIndex === 'last'
+          ? 'list.length - 1'
+          : typeof locatorIndex === 'number'
+            ? locatorIndex
+            : null;
+  const findCss =
+    idxExpr === null
+      ? `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (list.length > 1) return { error: 'strict', count: list.length, selector: ${sel} }; return list[0]; })()`
+      : `(function(){ var list = ${docVar}.querySelectorAll(${sel}); if (list.length === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= list.length) return { error: 'out-of-range', count: list.length, index: idx, selector: ${sel} }; return list[idx]; })()`;
+  const findXpath =
+    idxExpr === null
+      ? `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); if (result.snapshotLength === 0) return { error: 'not-found', count: 0, selector: ${sel} }; if (result.snapshotLength > 1) return { error: 'strict', count: result.snapshotLength, selector: ${sel} }; return result.snapshotItem(0); })()`
+      : `(function(){ var result = ${docVar}.evaluate(${sel}, ${docVar}, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); var len = result.snapshotLength; if (len === 0) return { error: 'not-found', count: 0, selector: ${sel} }; var idx = ${idxExpr}; if (idx < 0 || idx >= len) return { error: 'out-of-range', count: len, index: idx, selector: ${sel} }; return result.snapshotItem(idx); })()`;
+  const getEl = useXPath ? findXpath : findCss;
+  const checkedStr = checked ? 'true' : 'false';
+  return `var el = ${getEl};
+    if (el && el.error) return el;
+    if (!el || el.tagName !== 'INPUT') return { error: 'not-checkable', selector: ${sel} };
+    var t = (el.type || '').toLowerCase();
+    if (t !== 'checkbox' && t !== 'radio') return { error: 'not-checkable', selector: ${sel} };
+    el.checked = ${checkedStr};
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return { ok: true };`;
+}
+
+function buildCheckUncheckExpression(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  checked: boolean,
+  useXPath: boolean,
+  docVar: string = 'document'
+): string {
+  const inner = buildCheckUncheckInnerBlock(selector, locatorIndex, checked, useXPath, docVar);
+  return `(function(){ ${inner} })()`;
+}
+
+/** Returns { ok: true } or { x, y } for real click. Used by main page check/uncheck. */
+function buildCheckUncheckGetActionExpression(
+  selector: string,
+  locatorIndex: LocatorIndex | undefined,
+  checked: boolean,
+  useXPath: boolean
+): string {
+  const inner = buildCheckUncheckGetActionInnerBlock(selector, locatorIndex, checked, useXPath, 'document');
+  return `(function(){ ${inner} })()`;
+}
+
+/** Build expression to check/uncheck inside a frame. */
+export function buildFrameCheckUncheckExpression(
+  iframeSelectorOrChain: string | string[],
+  elementSelector: string,
+  checked: boolean,
+  index?: LocatorIndex
+): string {
+  const chain = Array.isArray(iframeSelectorOrChain) ? iframeSelectorOrChain : [iframeSelectorOrChain];
+  const getDoc = buildFrameChainGetDocExpression(chain);
+  const resolved = resolveSelector(elementSelector);
+  const useXPath = isXPath(elementSelector);
+  const inner = buildCheckUncheckInnerBlock(resolved, index === 0 ? 'first' : index, checked, useXPath, 'doc');
+  return `(function(){ var doc = ${getDoc}; ${inner} })()`;
+}
+
 export function throwLocatorError(
   res: { error: string; count: number; selector: string; index?: number },
   locatorInput: string
@@ -649,6 +1035,86 @@ export function createPage(client: CDPClient): PageApi {
       }
     },
 
+    async select(selector: string, option: SelectOptionOrOptions, index?: LocatorIndex): Promise<void> {
+      const resolved = resolveSelector(selector);
+      const useXPath = isXPath(selector);
+      const expr = Array.isArray(option)
+        ? buildSelectOptionMultiExpression(resolved, index === 0 ? 'first' : index, option, useXPath)
+        : buildSelectOptionExpression(resolved, index === 0 ? 'first' : index, option, useXPath);
+      const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+      const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+      if (!value || typeof value !== 'object') {
+        throw new Error(`Select failed: could not resolve \`${selector}\``);
+      }
+      if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+        const err = value as { error: string; count?: number; selector?: string; index?: number };
+        if (err.error === 'not-select') {
+          throw new Error(`Select failed: element is not a <select>: \`${selector}\``);
+        }
+        throwLocatorError(
+          {
+            error: err.error,
+            count: err.count ?? 0,
+            selector: err.selector ?? selector,
+            index: err.index,
+          },
+          selector
+        );
+      }
+    },
+
+    async check(selector: string, index?: LocatorIndex): Promise<void> {
+      const resolved = resolveSelector(selector);
+      const useXPath = isXPath(selector);
+      const expr = buildCheckUncheckGetActionExpression(resolved, index === 0 ? 'first' : index, true, useXPath);
+      const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+      const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+      if (!value || typeof value !== 'object') {
+        throw new Error(`Check failed: could not resolve \`${selector}\``);
+      }
+      if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+        const err = value as { error: string; count?: number; selector?: string; index?: number };
+        if (err.error === 'not-checkable') {
+          throw new Error(`Check failed: element is not a checkbox or radio: \`${selector}\``);
+        }
+        throwLocatorError(
+          { error: err.error, count: err.count ?? 0, selector: err.selector ?? selector, index: err.index },
+          selector
+        );
+      }
+      if ('x' in value && 'y' in value && typeof (value as { x: number; y: number }).x === 'number') {
+        const { x, y } = value as { x: number; y: number };
+        await client.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        await client.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      }
+    },
+
+    async uncheck(selector: string, index?: LocatorIndex): Promise<void> {
+      const resolved = resolveSelector(selector);
+      const useXPath = isXPath(selector);
+      const expr = buildCheckUncheckGetActionExpression(resolved, index === 0 ? 'first' : index, false, useXPath);
+      const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+      const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+      if (!value || typeof value !== 'object') {
+        throw new Error(`Uncheck failed: could not resolve \`${selector}\``);
+      }
+      if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+        const err = value as { error: string; count?: number; selector?: string; index?: number };
+        if (err.error === 'not-checkable') {
+          throw new Error(`Uncheck failed: element is not a checkbox or radio: \`${selector}\``);
+        }
+        throwLocatorError(
+          { error: err.error, count: err.count ?? 0, selector: err.selector ?? selector, index: err.index },
+          selector
+        );
+      }
+      if ('x' in value && 'y' in value && typeof (value as { x: number; y: number }).x === 'number') {
+        const { x, y } = value as { x: number; y: number };
+        await client.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        await client.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      }
+    },
+
     async pressKey(key: string): Promise<void> {
       await client.Input.dispatchKeyEvent({ type: 'keyDown', key });
       await client.Input.dispatchKeyEvent({ type: 'keyUp', key });
@@ -733,6 +1199,58 @@ export function createPage(client: CDPClient): PageApi {
       }
       const attr = (value as { attributeValue?: string }).attributeValue;
       return attr != null ? String(attr) : '';
+    },
+
+    async isVisible(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const resolved = resolveSelector(selector);
+      const useXPath = isXPath(selector);
+      const expr = buildIsVisibleExpression(resolved, index === 0 ? 'first' : index, useXPath);
+      const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+      const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+      if (!value || typeof value !== 'object') return false;
+      if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+        throwLocatorError(value as { error: string; count: number; selector: string; index?: number }, selector);
+      }
+      return (value as { value?: boolean }).value === true;
+    },
+
+    async isDisabled(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const resolved = resolveSelector(selector);
+      const useXPath = isXPath(selector);
+      const expr = buildIsDisabledExpression(resolved, index === 0 ? 'first' : index, useXPath);
+      const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+      const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+      if (!value || typeof value !== 'object') return false;
+      if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+        throwLocatorError(value as { error: string; count: number; selector: string; index?: number }, selector);
+      }
+      return (value as { value?: boolean }).value === true;
+    },
+
+    async isEditable(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const resolved = resolveSelector(selector);
+      const useXPath = isXPath(selector);
+      const expr = buildIsEditableExpression(resolved, index === 0 ? 'first' : index, useXPath);
+      const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+      const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+      if (!value || typeof value !== 'object') return false;
+      if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+        throwLocatorError(value as { error: string; count: number; selector: string; index?: number }, selector);
+      }
+      return (value as { value?: boolean }).value === true;
+    },
+
+    async isSelected(selector: string, index?: LocatorIndex): Promise<boolean> {
+      const resolved = resolveSelector(selector);
+      const useXPath = isXPath(selector);
+      const expr = buildIsSelectedExpression(resolved, index === 0 ? 'first' : index, useXPath);
+      const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+      const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+      if (!value || typeof value !== 'object') return false;
+      if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+        throwLocatorError(value as { error: string; count: number; selector: string; index?: number }, selector);
+      }
+      return (value as { value?: boolean }).value === true;
     },
   };
 }

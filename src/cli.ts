@@ -12,6 +12,11 @@ import { runConfigFile } from './config-runner';
 import type { RunResult } from './types';
 
 const defaultPattern = '**/*.test.js';
+const TEST_EXTENSIONS = ['.test.js', '.spec.js', '.test.ts', '.spec.ts'];
+
+function isTestFile(name: string): boolean {
+  return TEST_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
 
 /** Get path to templates folder (next to dist when published). */
 function getTemplatesDir(): string {
@@ -66,7 +71,7 @@ function findTestFiles(pattern: string, cwd: string): string[] {
         const full = path.join(dir, e.name);
         if (e.isDirectory()) {
           if (e.name !== 'node_modules' && e.name !== 'dist') walk(full);
-        } else if (e.isFile() && (e.name.endsWith('.test.js') || e.name.endsWith('.spec.js'))) {
+        } else if (e.isFile() && isTestFile(e.name)) {
           files.push(full);
         }
       }
@@ -85,7 +90,7 @@ function findTestFiles(pattern: string, cwd: string): string[] {
       for (const e of entries) {
         const fullPath = path.join(d, e.name);
         if (e.isDirectory()) walk(fullPath);
-        else if (e.name.endsWith('.test.js') || e.name.endsWith('.spec.js')) files.push(fullPath);
+        else if (isTestFile(e.name)) files.push(fullPath);
       }
     }
     walk(dir);
@@ -95,7 +100,18 @@ function findTestFiles(pattern: string, cwd: string): string[] {
 }
 
 function loadTestFile(filePath: string): void {
-  require(path.resolve(filePath));
+  const resolved = path.resolve(filePath);
+  if (filePath.endsWith('.ts')) {
+    try {
+      require('ts-node/register');
+    } catch {
+      console.error(
+        'TypeScript test file found but ts-node is not installed. Install it: npm install -D ts-node\n  Or compile .ts to .js and run the .js files.'
+      );
+      process.exit(1);
+    }
+  }
+  require(resolved);
 }
 
 function formatError(err: Error): string {
@@ -188,7 +204,7 @@ async function main(): Promise<void> {
   }
 
   if (testFiles.length === 0) {
-    console.log('No test files found. Create files matching *.test.js or run: cstesting path/to/test.js');
+    console.log('No test files found. Create files matching *.test.js, *.test.ts, *.spec.js, or *.spec.ts — or run: cstesting path/to/test.js');
     process.exit(0);
     return;
   }
