@@ -24,6 +24,9 @@ export type DialogHandler = (
   params: { type: string; message: string }
 ) => DialogHandlerResult | Promise<DialogHandlerResult>;
 
+/** String (substring or glob) or RegExp for URL matching in waitForURL. */
+export type URLPattern = string | RegExp;
+
 export type CDPClient = {
   Page: {
     enable(): Promise<void>;
@@ -61,6 +64,10 @@ export interface PageApi {
   waitForLoad(): Promise<void>;
   /** Wait until selector matches at least one element (CSS, XPath, id=, name=). Throws after timeout ms. */
   waitForSelector(selector: string, options?: { timeout?: number }): Promise<void>;
+  /** Current page URL (window.location.href). */
+  url(): Promise<string>;
+  /** Wait until the page URL matches the pattern. Pass a string (substring or glob with **), or a RegExp. Throws after timeout ms. */
+  waitForURL(urlOrPattern: URLPattern, options?: { timeout?: number }): Promise<void>;
   content(): Promise<string>;
   evaluate<T>(expression: string): Promise<T>;
   getTextContent(selector: string, index?: LocatorIndex): Promise<string>;
@@ -1137,6 +1144,40 @@ export function createPage(client: CDPClient): PageApi {
       }
       throw new Error(
         `waitForSelector: selector \`${selector}\` did not match any element within ${timeoutMs}ms`
+      );
+    },
+
+    async url(): Promise<string> {
+      const { result } = await client.Runtime.evaluate({
+        expression: 'window.location.href',
+        returnByValue: true,
+      });
+      if (result && 'value' in result) return String(result.value ?? '');
+      return '';
+    },
+
+    async waitForURL(urlOrPattern: URLPattern, options: { timeout?: number } = {}): Promise<void> {
+      const timeoutMs = options.timeout ?? 30000;
+      const pollMs = 200;
+      const match = (currentUrl: string): boolean => {
+        if (typeof urlOrPattern === 'string') {
+          if (urlOrPattern.includes('**')) {
+            const regex = new RegExp(urlOrPattern.replace(/\*\*/g, '.*'));
+            return regex.test(currentUrl);
+          }
+          return currentUrl.includes(urlOrPattern);
+        }
+        return urlOrPattern.test(currentUrl);
+      };
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const currentUrl = await this.url();
+        if (match(currentUrl)) return;
+        await new Promise((r) => setTimeout(r, pollMs));
+      }
+      const currentUrl = await this.url();
+      throw new Error(
+        `waitForURL: URL did not match \`${typeof urlOrPattern === 'string' ? urlOrPattern : urlOrPattern.source}\` within ${timeoutMs}ms (current: ${currentUrl})`
       );
     },
 

@@ -1,6 +1,6 @@
 {
   "name": "cstesting",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "A simple, extensible Node.js testing framework — start with a test runner and assertions, extend with browser automation later.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,7 +32,7 @@
   "bugs": {
     "url": "https://github.com/lokesh771988/EasyTesting/issues"
   },
-  "homepage": "https://github.com/YOUR_USERNAME/YOUR_REPO#readme",
+  "homepage": "https://cstesting.github.io/cstesting/",
   "engines": {
     "node": ">=16.0.0"
   },

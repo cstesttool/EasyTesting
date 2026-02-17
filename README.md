@@ -210,30 +210,13 @@ describe('My site', () => {
 | `browser.select(selector, option)` | Select option(s) in a `<select>`. Single: `{ label }` / `{ index }` / `{ value }`. **Multi-select**: pass an array, e.g. `[{ label: 'A' }, { label: 'B' }]` (replaces current selection). |
 | `browser.check(selector)` | Check a checkbox or radio button (set `checked = true`). |
 | `browser.uncheck(selector)` | Uncheck a checkbox (set `checked = false`). For radio, use `check(selector)` on another option. |
-| `browser.locator(selector)` | Return a locator; then use `.click()`, `.type(text)`, `.select(option)`, `.check()`, `.uncheck()`, `.pressKey(key)`. Supports shorthand and **strict mode** (see below). |
-| `browser.getByAttribute(attribute, attributeValue)` | Return a locator for `[attribute="attributeValue"]` (same strict mode). |
+| `browser.locator(selector)` | Return a locator for actions and state checks. See **Locators** below. |
+| `browser.getByAttribute(attribute, attributeValue)` | Return a locator for `[attribute="value"]`. Same strict mode as `locator()`. |
 | `browser.frame(iframeSelector)` | Return a **FrameHandle** for an iframe (same-origin). Use `frame.evaluate()`, `frame.click()`, etc. without switching. |
 | `browser.pressKey(key)` | Press a key (e.g. `'Enter'`). |
-
-**Locator shorthand** (same for `locator()`, `click()`, and `type()`):
-
-- `name="userName"` → `[name="userName"]`
-- `id="userName"` → `[id="userName"]`
-- `class="userName"` → `.userName`
-- **Any attribute:** `placeholder="Enter Name"` → `[placeholder="Enter Name"]`
-- **getByAttribute(attr, value):** `browser.getByAttribute('placeholder', 'Enter Name')` → same as above, returns a locator (`.click()`, `.type()`, `.pressKey()`)
-- Any other string is used as a **CSS selector**
-- **XPath** is supported: if the selector starts with `/` or `(`, it is evaluated as XPath (e.g. `//button[text()="New Tab"]`, `(//div)[1]`).
-
-**Strict mode:** 0 elements → error. 2+ elements → error suggesting `.first()`, `.last()`, or `.nth(n)`.
-
-**When multiple elements match**, use:
-- **`.first()`** — act on the first match
-- **`.last()`** — act on the last match  
-- **`.nth(index)`** — act on the nth match (0-based)
-
-Example: `browser.locator('input').first().type('hello')`, or `browser.getByAttribute('class', 'btn').nth(2).click()`. Locators also support **`.isVisible()`**, **`.isDisabled()`**, **`.isEditable()`**, and **`.isSelected()`** (return `Promise<boolean>`).
 | `browser.waitForLoad()` | Wait for the next page load (e.g. after form submit). |
+| `browser.waitForURL(urlOrPattern, options?)` | Wait until the page URL matches (string substring, glob like `'**/login'`, or RegExp). Throws after `timeout` ms (default 30000). |
+| `browser.url()` | Current page URL (`window.location.href`). |
 | `browser.waitForSelector(selector, options?)` | Wait until selector matches an element (CSS, XPath, `id=`, `name=`). Throws after `timeout` ms (default 30000). |
 | `browser.sleep(ms)` or `browser.sleep({ timeout: ms })` | Fixed delay (hard wait) for the given milliseconds. Prefer `waitForSelector` when you can. |
 | `browser.isVisible(selector)` | Whether the element is visible (not hidden by display/visibility/opacity, non-zero size). |
@@ -242,30 +225,279 @@ Example: `browser.locator('input').first().type('hello')`, or `browser.getByAttr
 | `browser.isSelected(selector)` | For checkbox/radio: whether checked. For `<option>`: whether selected. For `<select>`: whether it has a selected option. |
 | `browser.content()` | Return page HTML. |
 | `browser.evaluate(expression)` | Run JS in the page and return the value. |
-| `browser.setDialogHandler(handler \| null)` | Handle **alert**, **confirm**, and **prompt** without switching. See below. |
+| `browser.setDialogHandler(handler \| null)` | Handle **alert**, **confirm**, **prompt**, and **beforeunload**. See **Dialogs** section. |
 | `browser.getTabs()` | List all open tabs: `Promise<{ id, url, title }[]>`. |
 | `browser.switchToTab(indexOrId)` | Switch to tab by 0-based index or tab id. All later actions run in that tab. |
 | `browser.waitForNewTab(options?)` | Returns a **TabHandle** (page-like) for the new tab. Use `browser` for parent and the handle for the new tab without switching. |
 | `browser.close()` | Close the browser. |
 
-**Handling dialogs (alert, confirm, prompt)** — All JS dialogs are handled in the same CDP session (no `switchTo().alert()`). By default they are accepted (prompt gets `''`). Override with `setDialogHandler`:
+---
+
+## Navigations
+
+**Introduction** — CSTesting can navigate to URLs and handle navigations caused by page interactions (e.g. clicking a link or submitting a form).
+
+**Basic navigation** — The simplest form is opening a URL:
 
 ```js
-// Accept all (default). To dismiss confirms/cancel prompts:
+await browser.goto('https://example.com');
+```
+
+This loads the page and waits for the **load** event. The load event fires when the document and its dependent resources (stylesheets, scripts, iframes, images) have loaded.
+
+**Note** — If the page does a client-side redirect before load, `browser.goto()` waits for the **redirected** page to fire the load event.
+
+**When is the page loaded?** — Modern pages often do more after the load event: they fetch data lazily, hydrate UI, or load extra scripts. There is no single definition of “fully loaded”; it depends on the app. When can you start interacting?
+
+In CSTesting you can interact at any time. Actions **auto-wait** for the target element to become actionable (visible, stable, enabled). You don’t have to add an explicit “wait for page ready” in the general case.
+
+```js
+await browser.goto('https://example.com');
+await browser.locator('//*[contains(text(),"Example Domain")]').click();  // click auto-waits for the element
+```
+
+CSTesting behaves like a fast user: as soon as the element is ready, it acts. You usually don’t need to worry about every resource having loaded.
+
+**Hydration** — Sometimes you’ll see a click or typed text that seems to have no effect (or the text disappears). A common cause is **poor page hydration**: the server sends static HTML, then JavaScript runs and “hydrates” the page. If you interact before hydration finishes, the button may be visible and clickable in the DOM but its listeners aren’t attached yet, so the click does nothing or the input is reset.
+
+A simple check: in Chrome DevTools, enable “Slow 3G” in the Network panel and reload. If clicks are ignored or typed text is cleared, the page likely has a hydration timing issue. The fix is on the app side: disable interactive controls until after hydration, or ensure they are only enabled when the page is fully functional.
+
+**Waiting for navigation** — A click (e.g. submit, link) can trigger a navigation. You can wait for the new page in three ways:
+
+1. **`browser.waitForURL(urlOrPattern, { timeout? })`** — Wait until the page URL matches. Use a substring, a glob like `'**/login'`, or a RegExp.
+2. **`browser.waitForLoad()`** — Wait for the next **load** event (full document load after navigation).
+3. **`browser.waitForSelector(selector, { timeout })`** — Wait for an element that appears only on the new page (e.g. a login form or a success message).
+
+```js
+await browser.locator('//button[text()="Click me"]').click();
+await browser.waitForURL('**/login');   // wait until URL contains /login (glob: ** becomes .*)
+
+// Or by substring or RegExp:
+await browser.waitForURL('/dashboard');
+await browser.waitForURL(/\/login$/);
+```
+
+```js
+await browser.locator('//button[text()="Submit"]').click();
+await browser.waitForLoad();   // wait for the navigated page to load
+// or wait for something that only exists on the new page:
+await browser.waitForSelector('h1', { timeout: 10000 });
+```
+
+**Navigation and loading** — Showing a new document involves **navigation** and **loading**.
+
+- **Navigation** starts when the URL changes or you interact (e.g. click a link). It can fail (e.g. DNS error) or turn into a download. When the response headers are in and session history is updated, the navigation is **committed**; only then does **loading** start.
+- **Loading** is receiving the response body, parsing the document, running scripts, and firing events:
+  - The page URL is set to the new URL
+  - Document content is loaded and parsed
+  - `DOMContentLoaded` fires (when the HTML is parsed; scripts may still run)
+  - Scripts run and resources (styles, images) load
+  - The **load** event fires when the document and its subresources are done
+
+`browser.goto(url)` waits for the **load** event. After a click that navigates, use `browser.waitForURL('**/login')`, `browser.waitForLoad()`, or `waitForSelector` to wait for the new page.
+
+---
+
+## Locators
+
+**Introduction** — Locators are how you find element(s) on the page. Every action (`click`, `type`, `select`, `check`, etc.) and state check (`isVisible`, `isDisabled`, `isSelected`) takes a selector or uses a locator. When you use a locator, the element is resolved at the moment of the action, so if the DOM changes (e.g. re-render), the next action uses the current match.
+
+**Quick guide** — CSTesting supports:
+
+| Use case | How in CSTesting |
+|----------|------------------|
+| By **role** (e.g. button with text) | XPath: `//button[text()="Sign in"]`, or CSS `button` + `.first()` if needed |
+| By **label** (form control) | `name="userName"` (shorthand) or `getByAttribute('name', 'userName')`; for label text use XPath: `//label[contains(.,"Password")]/following-sibling::input` or similar |
+| By **placeholder** | `placeholder="name@example.com"` (shorthand) or `getByAttribute('placeholder', '...')` |
+| By **text** | XPath: `//*[text()="Welcome"]` or `//*[contains(text(),"Welcome")]` |
+| By **alt text** (images) | `getByAttribute('alt', 'logo description')` or `[alt="..."]` |
+| By **title** | `getByAttribute('title', '...')` or `[title="..."]` |
+| By **test id** | `getByAttribute('data-testid', 'submit-btn')` or `[data-testid="submit-btn"]` |
+
+**Selector shorthand** (for `locator()`, `click()`, `type()`, and all actions):
+
+- `name="userName"` → `[name="userName"]`
+- `id="userName"` → `[id="userName"]`
+- `class="userName"` → `.userName`
+- Any **attribute:** `placeholder="Enter Name"` → `[placeholder="Enter Name"]`
+- Anything else → **CSS selector**
+- Selector starting with `/` or `(` → **XPath** (e.g. `//button[text()="Sign in"]`, `(//div)[1]`)
+
+**Strict mode** — If the selector matches **0** elements, an error is thrown. If it matches **2 or more**, an error suggests using `.first()`, `.last()`, or `.nth(n)` so the intent is explicit.
+
+**When multiple elements match** — Use a locator and narrow:
+
+- `browser.locator('button').first().click()` — first match
+- `browser.locator('button').last().click()` — last match
+- `browser.locator('button').nth(1).click()` — second match (0-based)
+
+**Chaining** — You can chain from a frame: `browser.frame('iframe#form').locator('input').type('hello')`. Locators support `.click()`, `.type(text)`, `.select(option)`, `.check()`, `.uncheck()`, `.pressKey(key)`, `.isVisible()`, `.isDisabled()`, `.isEditable()`, `.isSelected()`, `.textContent()`, `.getAttribute(name)`.
+
+**Example** — Locate by label-like attribute, then act:
+
+```js
+await browser.getByAttribute('name', 'userName').type('mercury');
+await browser.getByAttribute('name', 'password').type('secret');
+await browser.locator('//button[text()="Sign in"]').click();
+const visible = await browser.locator('//*[contains(text(),"Welcome")]').isVisible();
+expect(visible).toBe(true);
+```
+
+**Locate by role (button, checkbox, etc.)** — Use XPath or CSS that matches the element and its accessible name:
+
+```js
+// Button with exact text
+await browser.locator('//button[text()="Sign in"]').click();
+
+// Checkbox with label (match input near label text)
+await browser.locator('//label[contains(.,"Subscribe")]//input').check();
+
+// Heading
+const heading = await browser.locator('//h3[text()="Sign up"]').textContent();
+```
+
+**Locate by placeholder** — Use the shorthand or `getByAttribute`:
+
+```js
+await browser.locator('placeholder="name@example.com"').type('user@test.com');
+// or
+await browser.getByAttribute('placeholder', 'name@example.com').type('user@test.com');
+```
+
+**Locate by text** — Use XPath for elements by their text content:
+
+```js
+await expect(await browser.locator('//*[contains(text(),"Welcome, John")]').isVisible()).toBe(true);
+```
+
+**Locate by test id** — Prefer `data-testid` (or a custom attribute) for stable selectors:
+
+```js
+await browser.getByAttribute('data-testid', 'submit-btn').click();
+```
+
+---
+
+## Frames
+
+**Introduction** — A page has one main frame; page-level interactions (`click`, `type`, etc.) run in the main frame. A page can have additional frames attached via `<iframe>`. You can get a **frame handle** and interact inside the frame without switching the main page. CSTesting supports **same-origin** iframes only (uses the frame’s `contentDocument`).
+
+**Locate element inside a frame** — Use `browser.frame(iframeSelector).locator(selector)` to get a locator that runs inside the frame, then call `.type()`, `.click()`, etc.:
+
+```js
+const frame = browser.frame('.frame-class');   // or iframe[name="frame-login"], iframe#myframe
+await frame.locator('[name="userName"]').type('John');
+await frame.locator('[name="password"]').type('secret');
+await frame.locator('//button[text()="Sign in"]').click();
+```
+
+Or use the frame handle’s methods directly with a selector:
+
+```js
+await frame.type('[name="userName"]', 'John');
+await frame.type('[name="password"]', 'secret');
+await frame.click('//button[text()="Sign in"]');
+```
+
+**Frame objects** — Get a frame with `browser.frame(selector)`. The selector can target the iframe by **id**, **name**, **class**, or any CSS/XPath:
+
+```js
+// By frame’s name attribute
+const frame = browser.frame('iframe[name="frame-login"]');
+// or XPath: browser.frame('//iframe[@name="frame-login"]')
+
+// By id or class
+const frame = browser.frame('iframe#myframe');
+const frame = browser.frame('.frame-class');
+
+// Interact inside the frame (same API as page: click, type, locator, evaluate, content, select, check, etc.)
+await frame.type('[name="username-input"]', 'John');
+await frame.click('button');
+```
+
+**Nested frames** — Use `.frame(selector)` on a frame handle to target an iframe inside that frame:
+
+```js
+const outer = browser.frame('iframe#outer');
+const inner = outer.frame('iframe#inner');
+await inner.click('button');
+// or in one go: browser.frame('iframe#outer').frame('iframe#inner').click('button');
+```
+
+**Late-loading inner frame** — If the inner iframe loads after the page, use `frame.waitForSelector(selector, { timeout })` before interacting:
+
+```js
+const inner = browser.frame('iframe#outer').frame('iframe#inner');
+await inner.waitForSelector('button', { timeout: 10000 });
+await inner.click('button');
+```
+
+---
+
+## Dialogs
+
+**Introduction** — CSTesting can interact with JavaScript dialogs: **alert**, **confirm**, **prompt**, and **beforeunload**. Dialogs are handled in the same CDP session (no `switchTo().alert()`). You register a **dialog handler** with `browser.setDialogHandler(handler)` so that when a dialog opens, your handler decides whether to accept or dismiss it (and, for prompt, what text to send).
+
+**alert(), confirm(), prompt()** — By default, all dialogs are **auto-dismissed** (accepted): you don’t have to set a handler. To control the behaviour, register a handler **before** the action that triggers the dialog. The handler receives `{ type, message }` and must return `{ accept: true }` or `{ accept: false }` (and for prompt, optional `promptText`):
+
+```js
 browser.setDialogHandler(({ type, message }) => ({ accept: true }));
+await browser.locator('//button[text()="Submit"]').click();
+```
 
-// Dismiss every dialog (Cancel):
-browser.setDialogHandler(() => ({ accept: false }));
+**Note** — The dialog handler **must** handle the dialog (return accept/dismiss). Dialogs are modal and block page execution until handled. If your handler does not respond (e.g. you only log the message), the action that triggered the dialog will **stall** and never resolve.
 
-// Custom: accept alert/confirm, for prompt send a value:
+**Wrong** — Do not only log and leave the dialog unhandled:
+
+```js
+// WRONG: click will hang because the dialog is never accepted/dismissed
+browser.setDialogHandler(({ message }) => console.log(message));
+await browser.click('button');  // stalls
+```
+
+**Correct** — Always return a result:
+
+```js
 browser.setDialogHandler(({ type, message }) => ({
   accept: true,
   promptText: type === 'prompt' ? 'my value' : undefined,
 }));
-
-// Reset to default (accept all):
-browser.setDialogHandler(null);
 ```
+
+**Dismiss (Cancel)** — Return `accept: false` to dismiss confirm/prompt:
+
+```js
+browser.setDialogHandler(() => ({ accept: false }));
+```
+
+**Reset to default** — `browser.setDialogHandler(null)` restores default behaviour (accept all; prompt gets `''`).
+
+**beforeunload** — When the page fires a beforeunload dialog (e.g. on leave), the handler receives `type === 'beforeunload'`. Return `{ accept: true }` to accept or `{ accept: false }` to dismiss:
+
+```js
+browser.setDialogHandler(({ type }) => ({
+  accept: type !== 'beforeunload',   // dismiss beforeunload, accept others
+}));
+```
+
+**Print dialogs** — To assert that **window.print()** was triggered (e.g. after clicking “Print”), you can replace `window.print` and then wait for it to be called:
+
+```js
+await browser.goto('https://example.com/page-with-print');
+// Replace window.print so we can detect when it’s called
+await browser.evaluate(`
+  window._printCalled = false;
+  window.print = () => { window._printCalled = true; };
+`);
+await browser.locator('//button[text()="Print it!"]').click();
+// Poll until print was invoked (or use a short sleep and then check)
+const printCalled = await browser.evaluate('window._printCalled');
+expect(printCalled).toBe(true);
+```
+
+For a more robust wait, poll in a loop with `browser.evaluate('window._printCalled')` and `browser.sleep(100)` until `true` or a timeout.
+
+---
 
 **New tab ** — `waitForNewTab()` returns a **TabHandle** (page-like object). Use **browser** for the parent and **newTab** for the new tab **without switching**:
 
@@ -287,38 +519,7 @@ await newTab.close();
 
 **Switching tabs** — To move the main browser to another tab: `await browser.switchToTab(1)` or `await browser.switchToTab(tabId)`. List tabs: `const tabs = await browser.getTabs();`
 
-**Frames / iframes** — Use a frame without switching the main page. Same-origin iframes only (uses `contentDocument`).
-
-```js
-const frame = browser.frame('iframe#myframe');
-// or by XPath: browser.frame('//iframe[@name="content"]')
-
-const title = await frame.evaluate('document.title');
-const html = await frame.content();
-await frame.click('button');
-await frame.locator('input').type('hello');
-const text = await frame.getTextContent('h1');
-```
-
-**Nested frames** — Use `.frame(selector)` on a frame handle to target an iframe inside that frame (Playwright-style):
-
-```js
-const outer = browser.frame('iframe#outer');
-const inner = outer.frame('iframe#inner');   // iframe inside the outer frame
-
-await inner.click('button');
-const title = await inner.evaluate('document.title');
-// or in one go: browser.frame('iframe#outer').frame('iframe#inner').click('button');
-```
-
-**Late-loading inner frame** — If the inner iframe loads after the page, use **`frame.waitForSelector(selector, { timeout })`** so the frame (and an element inside it) is ready before you interact:
-
-```js
-const inner = browser.frame('iframe#outer').frame('iframe#inner');
-// Wait for the inner frame to load and for a button to appear (e.g. 10s timeout)
-await inner.waitForSelector('button', { timeout: 10000 });
-await inner.click('button');
-```
+**Frames** — Use `browser.frame(iframeSelector)` to get a frame handle; then `frame.click()`, `frame.locator(...).type()`, `frame.evaluate()`, etc. Same-origin iframes only. See the **Frames** section for nested frames and late-loading inner frames.
 
 **Options for `createBrowser({ ... })`:**
 
@@ -628,19 +829,6 @@ expect(checked).toBe(true);
 const hasSelection = await browser.isSelected('#country');
 const optionSelected = await browser.locator('#country option[value="uk"]').isSelected();
 ```
-
----
-
-**Summary**
-
-| # | Way | Use when |
-|---|-----|----------|
-| 1 | `browser.select(selector, { label: 'Visible Text' })` | Match by the text shown to the user |
-| 2 | `browser.select(selector, { index: 0 })` | Match by 0-based position |
-| 3 | `browser.select(selector, { value: 'val' })` | Match by the option’s `value` attribute |
-| 4 | `browser.select(selector, [opt1, opt2, ...])` | Multi-select: replace selection with the given options (label/index/value) |
-
-You can also use a locator: `browser.locator('select#country').select({ label: 'Europe' })`. A `change` event is dispatched after selection so any listeners (e.g. dynamic forms) run as in a real browser.
 
 ---
 

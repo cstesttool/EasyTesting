@@ -24,7 +24,7 @@ import {
   buildFrameIsSelectedExpression,
   throwLocatorError,
 } from './cdp-page';
-import type { LocatorIndex, SelectOption, SelectOptionOrOptions } from './cdp-page';
+import type { LocatorIndex, SelectOption, SelectOptionOrOptions, URLPattern } from './cdp-page';
 
 /** Info for one browser tab (page target). */
 export interface TabInfo {
@@ -91,6 +91,10 @@ export interface TabHandle {
   locator(selector: string): LocatorApi;
   getByAttribute(attribute: string, attributeValue: string): LocatorApi;
   waitForLoad(): Promise<void>;
+  /** Wait until this tab's URL matches (string substring, glob with **, or RegExp). */
+  waitForURL(urlOrPattern: URLPattern, options?: { timeout?: number }): Promise<void>;
+  /** Current URL of this tab (window.location.href). */
+  getUrl(): Promise<string>;
   /** Fixed delay (hard wait) for the given milliseconds. */
   sleep(msOrOptions: number | { timeout: number }): Promise<void>;
   content(): Promise<string>;
@@ -192,6 +196,10 @@ export interface BrowserApi {
   waitForLoad(): Promise<void>;
   /** Wait until selector matches an element (CSS, XPath, id=, name=). Throws after timeout ms (default 30000). */
   waitForSelector(selector: string, options?: { timeout?: number }): Promise<void>;
+  /** Wait until the page URL matches (string substring, glob with **, or RegExp). Throws after timeout ms. */
+  waitForURL(urlOrPattern: URLPattern, options?: { timeout?: number }): Promise<void>;
+  /** Current page URL. */
+  url(): Promise<string>;
   /** Fixed delay (hard wait) for the given milliseconds. Use sparingly; prefer waitForSelector when possible. */
   sleep(msOrOptions: number | { timeout: number }): Promise<void>;
   /** Whether the matched element is visible. */
@@ -382,6 +390,9 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       locator: (selector: string) => tabCreateLocator(selector),
       getByAttribute: tabGetByAttribute,
       waitForLoad: () => tabPage.waitForLoad(),
+      waitForURL: (urlOrPattern: URLPattern, options?: { timeout?: number }) =>
+        tabPage.waitForURL(urlOrPattern, options),
+      getUrl: () => tabPage.url(),
       sleep: async (msOrOptions: number | { timeout: number }) => {
         const ms = typeof msOrOptions === 'number' ? msOrOptions : msOrOptions.timeout;
         return new Promise((r) => setTimeout(r, ms));
@@ -700,6 +711,11 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       onStep?.(`Wait for selector ${selector}`);
       return page.waitForSelector(selector, options);
     },
+    waitForURL: async (urlOrPattern: URLPattern, options?: { timeout?: number }) => {
+      onStep?.(`Wait for URL ${typeof urlOrPattern === 'string' ? urlOrPattern : urlOrPattern.source}`);
+      return page.waitForURL(urlOrPattern, options);
+    },
+    url: () => page.url(),
     sleep: async (msOrOptions: number | { timeout: number }) => {
       const ms = typeof msOrOptions === 'number' ? msOrOptions : msOrOptions.timeout;
       onStep?.(`Sleep ${ms}ms`);
@@ -725,5 +741,5 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
 
 export { launchChrome } from './launch';
 export { resolveSelector } from './cdp-page';
-export type { PageApi, DialogHandler, DialogHandlerResult, DialogOpeningParams, SelectOption, SelectOptionOrOptions } from './cdp-page';
+export type { PageApi, DialogHandler, DialogHandlerResult, DialogOpeningParams, SelectOption, SelectOptionOrOptions, URLPattern } from './cdp-page';
 export type { LaunchOptions, LaunchedChrome } from './launch';
