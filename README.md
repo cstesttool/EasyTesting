@@ -20,7 +20,7 @@ npx cstesting "**/*.test.js"
 npx cst
 ```
 
-Use in code: `const { describe, it, expect, createBrowser } = require('cstesting');`
+Use in code: `const { describe, it, expect, createBrowser, request } = require('cstesting');`
 
 ## Quick Start
 
@@ -149,6 +149,45 @@ All steps under a `#` section run as **one test case** in order; pass/fail is fo
 | `toContain(item)` | arrays and strings |
 | `toHaveLength(n)` | length |
 | `expect(x).not.toBe(y)` | negate any matcher |
+
+### API testing (Rest-Assured style)
+
+Use the same test runner to call HTTP APIs and assert on status, headers, and body (similar to [Rest Assured](https://rest-assured.io/) in Java).
+
+```js
+const { describe, it, expect, request } = require('cstesting');
+
+describe('Users API', () => {
+  it('GET /users/1 returns 200 and user', async () => {
+    await request.get('https://jsonplaceholder.typicode.com/users/1')
+      .expectStatus(200)
+      .expectHeader('content-type', /json/)
+      .expectJson('name', 'Leanne Graham');
+  });
+
+  it('POST with body and custom assertions', async () => {
+    const res = await request.post('https://jsonplaceholder.typicode.com/posts', { title: 'Foo', body: 'Bar', userId: 1 });
+    res.expectStatus(201);
+    const apiRes = res.getResponse();
+    expect(apiRes.body).toBeDefined();
+    expect(apiRes.body.id).toBeGreaterThan(0);
+  });
+
+  it('verify only status with one function (all methods)', async () => {
+    await request.verifyStatus('GET', 'https://jsonplaceholder.typicode.com/users/1', 200);
+    await request.verifyStatus('POST', 'https://jsonplaceholder.typicode.com/posts', 201, { title: 'x', body: 'y', userId: 1 });
+    await request.verifyStatus('DELETE', 'https://jsonplaceholder.typicode.com/posts/1', 200);
+  });
+});
+```
+
+- **`request.get(url, options?)`** — GET
+- **`request.post(url, body?, options?)`** — POST (body sent as JSON by default)
+- **`request.put(url, body?, options?)`** / **`request.patch(url, body?, options?)`** / **`request.delete(url, options?)`**
+- **`request.verifyStatus(method, url, expectedStatus, body?, options?)`** — single function for all methods; only verifies status code. Example: `await request.verifyStatus('GET', url, 200);` or `await request.verifyStatus('POST', url, 201, { name: 'x' });`
+- **Options:** `{ headers: { 'Authorization': 'Bearer ...' }, timeout: 30000 }`
+- **Chain:** `.expectStatus(200)`, `.expectHeader('content-type', /json/)`, `.expectBody({ ... })`, `.expectJson('path', value)` (path: `user.name`, `items[0].id`, or `$.key`)
+- **Custom assertions:** `const res = await request.get(url); res.expectStatus(200); const r = res.getResponse(); expect(r.body).toEqual(...);`
 
 ## Programmatic usage
 
@@ -832,17 +871,52 @@ const optionSelected = await browser.locator('#country option[value="uk"]').isSe
 
 ---
 
+## Multi-language support (Java, Python, C#)
+
+Like Playwright and Selenium, CSTesting can support **multiple programming languages** so teams can write tests in Java, Python, C#, or Node.js with the same concepts and API style.
+
+### How it works (two approaches)
+
+**1. Server + thin clients (recommended first step)**  
+- Run the **browser engine** in Node.js (current implementation). Add a small **protocol server** (WebSocket or HTTP) that exposes the same operations: `goto`, `click`, `type`, `select`, `waitForSelector`, `waitForURL`, etc.
+- **Java / Python / C#** use thin client libraries that:
+  - Start the Node server (or connect to an existing one) and launch Chrome.
+  - Send commands (e.g. `{ "method": "goto", "params": { "url": "https://example.com" } }`) and receive results.
+- One implementation of CDP and automation logic; all languages share it. Only the **wire protocol** and small client SDKs need to be implemented per language.
+
+**2. API spec + native CDP per language**  
+- Publish a **stable API spec** (method names, parameters, behavior) for the browser object.
+- Each ecosystem implements the same API using that language’s CDP or WebDriver client:
+  - **Java:** e.g. a `cstesting-java` JAR that uses a Java CDP/WebSocket client and implements `browser.goto()`, `browser.click()`, etc.
+  - **Python:** a `cstesting-python` package that uses a Python CDP client and the same API.
+  - **C#:** a `CSTesting` NuGet package with the same API over CDP in .NET.
+- No Node required for those users; each language has a native library. Trade-off: CDP logic and fixes are implemented (and maintained) per language.
+
+### What to build first
+
+- **Phase 1:** Define a **wire protocol** (JSON over WebSocket or HTTP) and add a **server mode** to this repo (e.g. `npx cstesting server --port=9274`). Document the protocol so anyone can implement a client.
+- **Phase 2:** Implement thin clients:
+  - **Python:** `pip install cstesting` → `from cstesting import create_browser`; under the hood it talks to the Node server.
+  - **Java:** Maven/Gradle dependency that starts or connects to the server and exposes the same API.
+  - **C#:** NuGet package that does the same for .NET.
+- **Phase 3 (optional):** Native CDP implementations in Java/Python/C# for teams that prefer not to run Node at all; keep behavior aligned with the API spec.
+
+See **`docs/multi-language-support.md`** for the protocol and server API. For **publishing the Java client** as a Maven/Gradle dependency (local or Maven Central), see **`docs/publish-java-maven-gradle.md`**. A minimal **Java client** lives in **`CSTesting-Java/`** in this repo, or clone from **[github.com/lokesh771988/CSTesting-Java](https://github.com/lokesh771988/CSTesting-Java)** (build with `mvn compile`; publish with `mvn install` or `mvn deploy`).
+
+---
+
 ## Roadmap (improve after publish)
 
 1. **Browser automation** — Done. CDP-based `browser.goto()`, `click()`, `type()` (no Playwright/Cypress).
-2. **DOM / jsdom** — Add optional `cstesting-dom` for testing DOM in Node without a browser.
-3. **More browser APIs** — `waitForSelector`, screenshots, multiple tabs.
-4. **Reporters** — JSON, JUnit XML, HTML report for CI and dashboards.
-5. **Watch mode** — Re-run tests on file changes.
-6. **Coverage** — Optional integration with Istanbul/c8.
-7. **More matchers** — `toMatchObject`, `toMatch(regex)`, `resolves`/`rejects` for promises.
-8. **Timeouts** — Per-test and global timeouts.
-9. **Parallel runs** — Run test files in parallel (with care for shared resources).
+2. **Multi-language** — Protocol server + thin clients for Java, Python, C# (see **Multi-language support** above).
+3. **DOM / jsdom** — Add optional `cstesting-dom` for testing DOM in Node without a browser.
+4. **More browser APIs** — Screenshots, more waits; many already added.
+5. **Reporters** — JSON, JUnit XML, HTML report for CI and dashboards.
+6. **Watch mode** — Re-run tests on file changes.
+7. **Coverage** — Optional integration with Istanbul/c8.
+8. **More matchers** — `toMatchObject`, `toMatch(regex)`, `resolves`/`rejects` for promises.
+9. **Timeouts** — Per-test and global timeouts.
+10. **Parallel runs** — Run test files in parallel (with care for shared resources).
 
 ## Development
 
