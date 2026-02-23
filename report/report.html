@@ -6,912 +6,355 @@
   <title>CSTesting Report</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 24px; background: #1a1a2e; color: #eee; line-height: 1.5; }
-    .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
-    h1 { margin: 0; font-size: 1.5rem; font-weight: 600; }
-    .summary-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-    .pill { padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: opacity 0.2s; border: 2px solid transparent; }
-    .pill:hover { opacity: 0.9; }
-    .pill.passed { background: #1b3d1b; color: #6f6; }
-    .pill.failed { background: #3d1b1b; color: #f66; }
-    .pill.skipped { background: #3d351b; color: #dd8; }
-    .pill.total { background: #1b2d3d; color: #8af; }
-    .pill.active { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
-    .bar-section { margin-bottom: 20px; }
-    .bar-label { font-size: 12px; color: #888; margin-bottom: 6px; }
-    .bar-container { display: flex; height: 24px; border-radius: 6px; overflow: hidden; background: #0d0d1a; }
-    .bar-seg { transition: width 0.2s; min-width: 2px; }
-    .bar-seg.passed { background: #2d5a2d; }
-    .bar-seg.failed { background: #5a2d2d; }
-    .bar-seg.skipped { background: #5a4d2d; }
-    .bar-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; }
-    .bar-legend span { display: flex; align-items: center; gap: 6px; }
-    .bar-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
-    .bar-legend .dot.passed { background: #6f6; }
-    .bar-legend .dot.failed { background: #f66; }
-    .bar-legend .dot.skipped { background: #aa8; }
-    .panel { display: none; margin-top: 16px; }
-    .panel.active { display: block; }
-    .panel h2 { font-size: 1.1rem; margin: 0 0 12px; }
-    .panel.pass-panel h2 { color: #6f6; }
-    .panel.fail-panel h2 { color: #f88; }
-    .panel.skip-panel h2 { color: #aa8; }
-    .panel.total-panel h2 { color: #8af; }
-    .test-row { display: flex; align-items: flex-start; gap: 10px; padding: 0; margin-bottom: 8px; border-radius: 6px; background: #16213e; overflow: hidden; }
-    .test-row .test-body { flex: 1; min-width: 0; }
-    .test-row-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; cursor: pointer; transition: background 0.15s; }
-    .test-row-header:hover { background: #1a2744; }
-    .test-row-header:focus { outline: 2px solid #4a6fa5; outline-offset: 2px; }
-    .test-row.expanded .test-row-header { border-bottom: 1px solid #2a3555; }
-    .test-row.expanded .test-chevron { transform: rotate(90deg); }
-    .test-row-details { max-height: 0; overflow: hidden; transition: max-height 0.25s ease-out; }
-    .test-row.expanded .test-row-details { max-height: 2000px; transition: max-height 0.35s ease-in; }
-    .test-row-details > div { padding: 12px 12px 12px 22px; }
-    .test-name { font-weight: 500; word-break: break-word; }
-    .test-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; font-size: 13px; }
-    .test-duration { color: #888; }
-    .test-chevron { font-size: 10px; color: #888; transition: transform 0.2s; }
-    .test-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
-    .test-status.status-pass { background: #1b3d1b; color: #6f6; }
-    .test-status.status-fail { background: #3d1b1b; color: #f66; }
-    .test-status.status-skip { background: #3d351b; color: #aa8; }
-    .test-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin: 14px 0 0 10px; }
-    .test-dot.pass { background: #6f6; }
-    .test-dot.fail { background: #f66; }
-    .test-dot.skip { background: #aa8; }
-    .pw-steps-section { margin: 0 0 16px; }
-    .pw-steps-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 8px; }
-    .pw-steps-list { border: 1px solid #2a3555; border-radius: 6px; overflow: hidden; background: #0d0d1a; }
-    .pw-step-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #1a1a2e; min-height: 40px; }
-    .pw-step-row:last-child { border-bottom: none; }
-    .pw-step-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
-    .pw-step-icon-passed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
-    .pw-step-icon-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
-    .pw-step-index { color: #666; font-size: 12px; min-width: 20px; }
-    .pw-step-title { color: #e5e5e5; flex: 1; }
-    .pw-no-steps { color: #666; font-size: 13px; margin: 0; padding: 12px; }
-    .pw-no-steps code { background: #1a1a2e; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-    .pw-error-section { margin-top: 16px; border-top: 1px solid #2a3555; padding-top: 16px; }
-    .pw-error-content { border: 1px solid #3d1b1b; border-radius: 6px; background: rgba(127, 29, 29, 0.15); padding: 12px; }
-    .pw-error-message, .pw-error-stack { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #fca5a5; font-family: ui-monospace, monospace; }
-    .pw-error-stack { margin-top: 8px; font-size: 12px; opacity: 0.9; color: #94a3b8; }
-    .empty-msg { color: #888; margin: 0; }
-    .meta { font-size: 12px; color: #666; margin-top: 16px; }
+    body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #0f172a; color: #e2e8f0; line-height: 1.5; }
+    .report-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; padding: 16px 24px; background: #1e293b; border-bottom: 1px solid #334155; }
+    .report-search-wrap { flex: 1; min-width: 200px; max-width: 400px; }
+    .report-search-wrap input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid #475569; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 14px; }
+    .report-search-wrap input::placeholder { color: #64748b; }
+    .report-search-wrap input:focus { outline: 2px solid #3b82f6; outline-offset: 0; }
+    .report-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; }
+    .report-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; font-size: 14px; }
+    .report-summary-item { display: flex; align-items: center; gap: 6px; }
+    .report-summary-item.all { font-weight: 600; color: #94a3b8; }
+    .report-summary-item.passed { color: #22c55e; }
+    .report-summary-item.failed { color: #ef4444; }
+    .report-summary-item.skipped { color: #eab308; }
+    .report-meta { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .report-content { padding: 16px 24px 32px; }
+    .report-file-group { margin-bottom: 8px; border-radius: 8px; background: #1e293b; overflow: hidden; border: 1px solid #334155; }
+    .report-file-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; transition: background 0.15s; }
+    .report-file-header:hover { background: #334155; }
+    .report-file-chevron { font-size: 10px; color: #94a3b8; transition: transform 0.2s; }
+    .report-file-group.collapsed .report-file-chevron { transform: rotate(-90deg); }
+    .report-file-group.collapsed .report-file-tests { display: none; }
+    .report-file-path { font-weight: 600; color: #e2e8f0; word-break: break-all; flex: 1; min-width: 0; }
+    .report-file-count { font-size: 12px; color: #64748b; }
+    .report-file-badges { display: flex; gap: 8px; }
+    .report-file-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+    .report-file-badge.pass { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-file-badge.fail { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .report-file-badge.skip { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+    .report-file-tests { padding: 0 8px 8px; }
+    .report-test-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 8px; border-radius: 6px; background: #0f172a; border: 1px solid #334155; overflow: hidden; }
+    .report-test-row.hidden { display: none !important; }
+    .report-file-group.hidden { display: none !important; }
+    .report-test-row .report-test-body { flex: 1; min-width: 0; }
+    .report-test-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 14px; cursor: pointer; transition: background 0.15s; }
+    .report-test-header:hover { background: #1e293b; }
+    .report-test-name { font-weight: 500; word-break: break-word; }
+    .report-test-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; font-size: 13px; }
+    .report-test-duration { color: #64748b; }
+    .report-chevron { font-size: 10px; color: #64748b; transition: transform 0.2s; }
+    .report-test-row.expanded .report-chevron { transform: rotate(90deg); }
+    .report-status-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .report-status-badge.status-pass { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-status-badge.status-fail { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .report-status-badge.status-skip { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+    .report-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin: 14px 0 0 10px; }
+    .report-dot.pass { background: #22c55e; }
+    .report-dot.fail { background: #ef4444; }
+    .report-dot.skip { background: #eab308; }
+    .report-tags-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
+    .report-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #334155; color: #94a3b8; }
+    .report-source { font-size: 11px; color: #64748b; padding: 0 14px 8px; font-family: ui-monospace, monospace; }
+    .report-test-details { max-height: 0; overflow: hidden; transition: max-height 0.25s ease-out; }
+    .report-test-row.expanded .report-test-details { max-height: 3000px; transition: max-height 0.35s ease-in; }
+    .report-test-details > div { padding: 12px 14px 12px 24px; border-top: 1px solid #334155; }
+    .report-section { margin: 0 0 16px; }
+    .report-section:last-child { margin-bottom: 0; }
+    .report-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 8px; }
+    .report-steps-list { border: 1px solid #334155; border-radius: 6px; overflow: hidden; background: #0f172a; }
+    .report-step-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #1e293b; }
+    .report-step-row:last-child { border-bottom: none; }
+    .report-step-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
+    .report-step-passed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-error-section .report-error-content { position: relative; border: 1px solid #7f1d1d; border-radius: 6px; background: rgba(127, 29, 29, 0.15); padding: 12px; }
+    .report-error-message, .report-error-stack { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #fca5a5; font-family: ui-monospace, monospace; }
+    .report-error-stack { margin-top: 8px; font-size: 12px; color: #94a3b8; }
+    .report-copy-btn { margin-top: 8px; padding: 6px 12px; font-size: 12px; border-radius: 4px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; cursor: pointer; }
+    .report-copy-btn:hover { background: #334155; }
+    .report-no-steps { color: #64748b; font-size: 13px; margin: 0; padding: 12px; }
+    .report-no-steps code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    .report-empty-msg { color: #64748b; padding: 24px; text-align: center; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>CSTesting Report</h1>
-    <div class="summary-pills">
-      <button type="button" class="pill total active" data-tab="total" aria-pressed="true">Total (13)</button>
-      <button type="button" class="pill passed " data-tab="pass" aria-pressed="false">Passed (13)</button>
-      <button type="button" class="pill failed " data-tab="fail" aria-pressed="false">Failed (0)</button>
-      <button type="button" class="pill skipped " data-tab="skip" aria-pressed="false">Skipped (0)</button>
+  <div class="report-top">
+    <div class="report-search-wrap" style="position:relative">
+      <span class="report-search-icon" aria-hidden="true">🔍</span>
+      <input type="text" id="report-search" placeholder="Search by file name, test name, or tag..." autocomplete="off" />
+    </div>
+    <div class="report-summary-block">
+      <div class="report-summary">
+        <span class="report-summary-item all">All 7</span>
+        <span class="report-summary-item passed">✓ Passed 1</span>
+        <span class="report-summary-item failed">× Failed 0</span>
+        <span class="report-summary-item">Flaky 0</span>
+        <span class="report-summary-item skipped">Skipped 6</span>
+      </div>
+      <div class="report-meta">02/23/2026, 10:21:20 PM · Total time: 7.8s</div>
     </div>
   </div>
 
-  <div class="bar-section">
-    <div class="bar-label">Result distribution</div>
-    <div class="bar-container" role="img" aria-label="Bar chart: passed 100%, failed 0%, skipped 0%">
-      <div class="bar-seg passed" style="width: 100%"></div>
-      <div class="bar-seg failed" style="width: 0%"></div>
-      <div class="bar-seg skipped" style="width: 0%"></div>
+  <div class="report-content">
+    
+  <div class="report-file-group" data-file="example\browser1.test.js" data-search="example\browser1.test.js example\browser1.test.js root &gt; browser (cdp) verifying get screenshot smoke screenshot example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements) example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements) example\browser1.test.js root &gt; browser (cdp) frames or ifrmes example\browser1.test.js root &gt; browser (cdp) mouse actions example\browser1.test.js root &gt; browser (cdp) single dropdown handling example\browser1.test.js root &gt; browser (cdp) checkbox and radio">
+    <div class="report-file-header" role="button" tabindex="0" aria-expanded="true" data-target="file-example_browser1_test_js">
+      <span class="report-file-chevron">▼</span>
+      <span class="report-file-path">example\browser1.test.js</span>
+      <span class="report-file-count">7 tests</span>
+      <span class="report-file-badges">
+        <span class="report-file-badge pass">✓ 1</span>
+        
+        <span class="report-file-badge skip">⊘ 6</span>
+      </span>
     </div>
-    <div class="bar-legend">
-      <span><span class="dot passed"></span> Passed 100.0%</span>
-      <span><span class="dot failed"></span> Failed 0.0%</span>
-      <span><span class="dot skipped"></span> Skipped 0.0%</span>
+    <div id="file-example_browser1_test_js" class="report-file-tests">
+      
+    <div class="report-test-row report-test-pass" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) verifying get screenshot smoke screenshot" data-index="0">
+      <span class="report-dot pass"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">root &gt; Browser (CDP) › verifying get screenshot</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">7.8s</span>
+            <span class="report-status-badge status-pass">Passed</span>
+            <span class="report-chevron">▶</span>
+          </span>
+        </div>
+        <div class="report-tags-row"><span class="report-tag">smoke</span><span class="report-tag">screenshot</span></div>
+        <div class="report-source">example\browser1.test.js</div>
+        <div class="report-test-details">
+          
+    <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <div class="report-steps-list">
+        
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">1</span>
+          <span class="report-step-title">Test case started</span>
+        </div>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">2</span>
+          <span class="report-step-title">Goto https://testautomationpractice.blogspot.com/</span>
+        </div>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">3</span>
+          <span class="report-step-title">Sleep 2000ms</span>
+        </div>
+      </div>
+    </div>
+          
+        </div>
+      </div>
+    </div>
+    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)" data-index="1">
+      <span class="report-dot skip"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">root &gt; Browser (CDP) › locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">0ms</span>
+            <span class="report-status-badge status-skip">Skipped</span>
+            <span class="report-chevron">▶</span>
+          </span>
+        </div>
+        
+        <div class="report-source">example\browser1.test.js</div>
+        <div class="report-test-details">
+          <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+          
+        </div>
+      </div>
+    </div>
+    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)" data-index="2">
+      <span class="report-dot skip"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">root &gt; Browser (CDP) › locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">0ms</span>
+            <span class="report-status-badge status-skip">Skipped</span>
+            <span class="report-chevron">▶</span>
+          </span>
+        </div>
+        
+        <div class="report-source">example\browser1.test.js</div>
+        <div class="report-test-details">
+          <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+          
+        </div>
+      </div>
+    </div>
+    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) frames or ifrmes" data-index="3">
+      <span class="report-dot skip"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">root &gt; Browser (CDP) › frames or ifrmes</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">0ms</span>
+            <span class="report-status-badge status-skip">Skipped</span>
+            <span class="report-chevron">▶</span>
+          </span>
+        </div>
+        
+        <div class="report-source">example\browser1.test.js</div>
+        <div class="report-test-details">
+          <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+          
+        </div>
+      </div>
+    </div>
+    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) mouse actions" data-index="4">
+      <span class="report-dot skip"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">root &gt; Browser (CDP) › mouse actions</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">0ms</span>
+            <span class="report-status-badge status-skip">Skipped</span>
+            <span class="report-chevron">▶</span>
+          </span>
+        </div>
+        
+        <div class="report-source">example\browser1.test.js</div>
+        <div class="report-test-details">
+          <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+          
+        </div>
+      </div>
+    </div>
+    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) single dropdown handling" data-index="5">
+      <span class="report-dot skip"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">root &gt; Browser (CDP) › single dropdown handling</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">0ms</span>
+            <span class="report-status-badge status-skip">Skipped</span>
+            <span class="report-chevron">▶</span>
+          </span>
+        </div>
+        
+        <div class="report-source">example\browser1.test.js</div>
+        <div class="report-test-details">
+          <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+          
+        </div>
+      </div>
+    </div>
+    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) checkbox and radio" data-index="6">
+      <span class="report-dot skip"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">root &gt; Browser (CDP) › checkbox and radio</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">0ms</span>
+            <span class="report-status-badge status-skip">Skipped</span>
+            <span class="report-chevron">▶</span>
+          </span>
+        </div>
+        
+        <div class="report-source">example\browser1.test.js</div>
+        <div class="report-test-details">
+          <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    </div>
+          
+        </div>
+      </div>
+    </div>
     </div>
   </div>
-
-  <p class="meta">Duration: 4.50s &middot; 2026-02-19T14:10:53.110Z</p>
-  <p class="meta">Click a test case to expand and see executed steps.</p>
-
-  <div id="panel-total" class="panel total-panel active" role="region" aria-label="All tests">
-    <h2>All tests (13)</h2>
-    <div class="panel-content">
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; GET – fluent expectStatus, expectHeader, expectJson</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">115ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; GET – getResponse() and expect()</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">21ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; POST – with body, expectStatus 201</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">662ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; POST – expectBody / expectJson on created resource</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">223ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; PUT – with body, expectStatus 200</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">748ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; PATCH – with body, expectStatus 200</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">235ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; DELETE – expectStatus 200</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">222ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus GET</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">17ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus POST with body</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">221ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus PUT with body</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">626ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus PATCH with body</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">727ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus DELETE</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">656ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – raw request() &gt; request() returns ApiResponse, assert with expect()</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">23ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div></div>
-  </div>
-  <div id="panel-pass" class="panel pass-panel " role="region" aria-label="Passed tests">
-    <h2>Passed tests (13)</h2>
-    <div class="panel-content">
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; GET – fluent expectStatus, expectHeader, expectJson</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">115ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; GET – getResponse() and expect()</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">21ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; POST – with body, expectStatus 201</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">662ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; POST – expectBody / expectJson on created resource</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">223ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; PUT – with body, expectStatus 200</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">748ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; PATCH – with body, expectStatus 200</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">235ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – request methods &gt; DELETE – expectStatus 200</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">222ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus GET</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">17ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus POST with body</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">221ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus PUT with body</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">626ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus PATCH with body</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">727ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – verifyStatus (single function, all methods) &gt; verifyStatus DELETE</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">656ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div>
-    <div class="test-row test-row-pass" data-expanded="false">
-      <span class="test-dot pass"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">root &gt; API testing – raw request() &gt; request() returns ApiResponse, assert with expect()</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">23ms</span>
-            <span class="test-status status-pass">Passed</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
-          </span>
-        </div>
-        
-    <div class="test-row-details">
-      
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
-        
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">1</span>
-          <span class="pw-step-title">Test case started</span>
-        </div>
-      </div>
-    </div>
-      
-    </div>
-      </div>
-    </div></div>
-  </div>
-  <div id="panel-fail" class="panel fail-panel " role="region" aria-label="Failed tests">
-    <h2>Failed tests (0)</h2>
-    <div class="panel-content"><p class="empty-msg">No failed tests.</p></div>
-  </div>
-  <div id="panel-skip" class="panel skip-panel " role="region" aria-label="Skipped tests">
-    <h2>Skipped tests (0)</h2>
-    <div class="panel-content"><p class="empty-msg">No skipped tests.</p></div>
   </div>
 
   <script>
-    (function() {
-      var defaultTab = "total";
-      var pills = document.querySelectorAll('.pill[data-tab]');
-      var panels = document.querySelectorAll('.panel');
-      function showTab(tab) {
-        pills.forEach(function(p) {
-          p.classList.toggle('active', p.getAttribute('data-tab') === tab);
-          p.setAttribute('aria-pressed', p.getAttribute('data-tab') === tab ? 'true' : 'false');
-        });
-        panels.forEach(function(panel) {
-          var panelTab = panel.id.replace('panel-', '');
-          panel.classList.toggle('active', panelTab === tab);
-        });
-      }
-      pills.forEach(function(p) {
-        p.addEventListener('click', function() { showTab(p.getAttribute('data-tab')); });
-      });
-      showTab(defaultTab);
+(function() {
+  var searchInput = document.getElementById('report-search');
+  var fileGroups = document.querySelectorAll('.report-file-group');
+  var testRows = document.querySelectorAll('.report-test-row');
 
-      document.querySelectorAll('.test-row-header').forEach(function(header) {
-        function toggle() {
-          var row = header.closest('.test-row');
-          var expanded = row.getAttribute('data-expanded') === 'true';
-          row.setAttribute('data-expanded', !expanded);
-          row.classList.toggle('expanded', !expanded);
-          header.setAttribute('aria-expanded', !expanded);
-        }
-        header.addEventListener('click', toggle);
-        header.addEventListener('keydown', function(e) {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-        });
+  function onSearch() {
+    var q = (searchInput.value || '').trim().toLowerCase();
+    if (!q) {
+      fileGroups.forEach(function(g) { g.classList.remove('hidden'); });
+      testRows.forEach(function(r) { r.classList.remove('hidden'); });
+      return;
+    }
+    fileGroups.forEach(function(group) {
+      var groupSearch = group.getAttribute('data-search') || '';
+      var fileMatch = groupSearch.indexOf(q) !== -1;
+      var tests = group.querySelectorAll('.report-test-row');
+      var anyVisible = false;
+      tests.forEach(function(row) {
+        var rowSearch = (row.getAttribute('data-search') || '');
+        var match = fileMatch || rowSearch.indexOf(q) !== -1;
+        row.classList.toggle('hidden', !match);
+        if (match) anyVisible = true;
       });
-    })();
+      group.classList.toggle('hidden', !anyVisible);
+    });
+  }
+  searchInput.addEventListener('input', onSearch);
+  searchInput.addEventListener('keydown', function(e) { if (e.key === 'Escape') { searchInput.value = ''; onSearch(); searchInput.blur(); } });
+
+  fileGroups.forEach(function(group) {
+    var header = group.querySelector('.report-file-header');
+    var targetId = header && header.getAttribute('data-target');
+    var target = targetId ? document.getElementById(targetId) : null;
+    if (!header || !target) return;
+    header.addEventListener('click', function() {
+      group.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', group.classList.contains('collapsed') ? 'false' : 'true');
+    });
+  });
+
+  testRows.forEach(function(row) {
+    var header = row.querySelector('.report-test-header');
+    if (!header) return;
+    function toggle() {
+      var expanded = row.getAttribute('data-expanded') === 'true';
+      row.setAttribute('data-expanded', !expanded);
+      row.classList.toggle('expanded', !expanded);
+      header.setAttribute('aria-expanded', !expanded);
+    }
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+
+  document.querySelectorAll('.report-copy-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var content = btn.closest('.report-error-content');
+      if (!content) return;
+      var pre = content.querySelector('.report-error-message');
+      var text = pre ? pre.textContent : '';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = 'Copy'; }, 1500); });
+      }
+    });
+  });
+})();
   </script>
 </body>
 </html>

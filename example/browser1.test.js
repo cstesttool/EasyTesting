@@ -180,4 +180,19 @@ describe('Browser (CDP)', () => {
     const selected = await browser.isSelected('#tuesday');
     expect(selected).toBe(true);
   });
+
+  it('verifying get screenshot', { tags: ['smoke', 'screenshot'] }, async () => {
+    await browser.goto('https://testautomationpractice.blogspot.com/');
+    await browser.sleep(2000);
+    // Full page
+   // const fullPageBuffer = await browser.getScreenshot({ fullPage: true });
+    await browser.getScreenshot({ path: 'full.png', fullPage: true });
+
+    // Viewport only
+   // const viewportBuffer = await browser.getScreenshot();
+
+    // Specific element
+    await browser.getScreenshot({ selector: '#female', path: 'hero.png' });
+    await browser.locator('#tuesday').screenshot({ path: 'main.png' });
+  });
 });

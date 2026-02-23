@@ -103,6 +103,14 @@ export interface TabHandle {
   isDisabled(selector: string): Promise<boolean>;
   isEditable(selector: string): Promise<boolean>;
   isSelected(selector: string): Promise<boolean>;
+  /** Capture a screenshot (full page or of a selector). Optional path writes to file. */
+  getScreenshot(options?: {
+    path?: string;
+    fullPage?: boolean;
+    selector?: string;
+    format?: 'png' | 'jpeg';
+    quality?: number;
+  }): Promise<Buffer>;
   /** Close only this tab's connection (does not close the browser). */
   close(): Promise<void>;
 }
@@ -164,6 +172,8 @@ export interface LocatorApi {
   isEditable(): Promise<boolean>;
   /** Whether checkbox/radio is checked, option is selected, or select has a selection. */
   isSelected(): Promise<boolean>;
+  /** Capture a screenshot of this element. Returns PNG/JPEG buffer; optional path writes to file. */
+  screenshot(options?: { path?: string; format?: 'png' | 'jpeg'; quality?: number }): Promise<Buffer>;
   /** Use the first matching element (when multiple match). */
   first(): LocatorApi;
   /** Use the last matching element. */
@@ -210,6 +220,19 @@ export interface BrowserApi {
   isEditable(selector: string): Promise<boolean>;
   /** Whether checkbox/radio is checked, option selected, or select has a selection. */
   isSelected(selector: string): Promise<boolean>;
+  /**
+   * Capture a screenshot. Returns PNG/JPEG bytes as a Buffer.
+   * - No options or fullPage: true — full scrollable page.
+   * - selector — screenshot of the first element matching the selector.
+   * Optional path writes the buffer to a file.
+   */
+  getScreenshot(options?: {
+    path?: string;
+    fullPage?: boolean;
+    selector?: string;
+    format?: 'png' | 'jpeg';
+    quality?: number;
+  }): Promise<Buffer>;
   content(): Promise<string>;
   evaluate<T>(expression: string): Promise<T>;
   /**
@@ -328,6 +351,8 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       isDisabled: () => page.isDisabled(selector, index),
       isEditable: () => page.isEditable(selector, index),
       isSelected: () => page.isSelected(selector, index),
+      screenshot: (options?: { path?: string; format?: 'png' | 'jpeg'; quality?: number }) =>
+        page.getScreenshot({ ...options, selector, index }),
       first: () => createLocator(selector, 'first'),
       last: () => createLocator(selector, 'last'),
       nth: (n: number) => createLocator(selector, n),
@@ -363,6 +388,8 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
         isDisabled: () => tabPage.isDisabled(selector, index),
         isEditable: () => tabPage.isEditable(selector, index),
         isSelected: () => tabPage.isSelected(selector, index),
+        screenshot: (options?: { path?: string; format?: 'png' | 'jpeg'; quality?: number }) =>
+          tabPage.getScreenshot({ ...options, selector, index }),
         first: () => tabCreateLocator(selector, 'first'),
         last: () => tabCreateLocator(selector, 'last'),
         nth: (n: number) => tabCreateLocator(selector, n),
@@ -403,6 +430,8 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
       isDisabled: (sel: string) => tabPage.isDisabled(sel),
       isEditable: (sel: string) => tabPage.isEditable(sel),
       isSelected: (sel: string) => tabPage.isSelected(sel),
+      getScreenshot: (options?: { path?: string; fullPage?: boolean; selector?: string; format?: 'png' | 'jpeg'; quality?: number }) =>
+        tabPage.getScreenshot(options),
       close: () => tabClient.close(),
     };
   }
@@ -583,6 +612,9 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
         isDisabled: () => frameIsDisabled(selector, index),
         isEditable: () => frameIsEditable(selector, index),
         isSelected: () => frameIsSelected(selector, index),
+        screenshot: async () => {
+          throw new Error('Screenshot of elements inside a frame is not yet supported. Use browser.getScreenshot({ selector }) on the main page instead.');
+        },
         first: () => frameCreateLocator(selector, 'first'),
         last: () => frameCreateLocator(selector, 'last'),
         nth: (n: number) => frameCreateLocator(selector, n),
@@ -699,6 +731,8 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
     isDisabled: (selector: string) => page.isDisabled(selector),
     isEditable: (selector: string) => page.isEditable(selector),
     isSelected: (selector: string) => page.isSelected(selector),
+    getScreenshot: (options?: { path?: string; fullPage?: boolean; selector?: string; format?: 'png' | 'jpeg'; quality?: number }) =>
+      page.getScreenshot(options),
     pressKey: (key: string) => page.pressKey(key),
     locator: (selector: string) => createLocator(selector),
     getByAttribute: (attribute: string, attributeValue: string) => getByAttribute(attribute, attributeValue),

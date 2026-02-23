@@ -23,7 +23,17 @@ import * as path from 'path';
 export type ConfigStep =
   | { action: 'goto'; url: string }
   | { action: 'type'; label: string; locator: string; value: string }
-  | { action: 'click'; locator: string };
+  | { action: 'click'; locator: string }
+  | { action: 'wait'; ms: number }
+  | { action: 'screenshot'; path: string; fullPage?: boolean; element?: string }
+  | { action: 'doubleClick'; locator: string }
+  | { action: 'rightClick'; locator: string }
+  | { action: 'hover'; locator: string }
+  | { action: 'switchTab'; index: number }
+  | { action: 'frame'; selector: string }  // 'main' = back to main; 'sel1,sel2' = nested frames
+  | { action: 'check'; locator: string }
+  | { action: 'uncheck'; locator: string }
+  | { action: 'select'; locator: string; option: { value?: string; label?: string } };
 
 /** One test case: a name (from # line) and its steps. */
 export interface ConfigTestCase {
@@ -53,6 +63,75 @@ function parseLine(line: string): ConfigStep | null {
   const clickMatch = trimmed.match(/^click=(.+)$/);
   if (clickMatch) {
     return { action: 'click', locator: clickMatch[1].trim() };
+  }
+
+  // doubleClick=, rightClick=, hover=
+  const doubleClickMatch = trimmed.match(/^doubleClick=(.+)$/);
+  if (doubleClickMatch) return { action: 'doubleClick', locator: doubleClickMatch[1].trim() };
+  const rightClickMatch = trimmed.match(/^rightClick=(.+)$/);
+  if (rightClickMatch) return { action: 'rightClick', locator: rightClickMatch[1].trim() };
+  const hoverMatch = trimmed.match(/^hover=(.+)$/);
+  if (hoverMatch) return { action: 'hover', locator: hoverMatch[1].trim() };
+
+  // check=, uncheck=
+  const checkMatch = trimmed.match(/^check=(.+)$/);
+  if (checkMatch) return { action: 'check', locator: checkMatch[1].trim() };
+  const uncheckMatch = trimmed.match(/^uncheck=(.+)$/);
+  if (uncheckMatch) return { action: 'uncheck', locator: uncheckMatch[1].trim() };
+
+  // wait:2000 (ms) or wait:2 (seconds if < 100)
+  const waitMatch = trimmed.match(/^wait:(\d+)$/);
+  if (waitMatch) {
+    let ms = parseInt(waitMatch[1], 10);
+    if (ms > 0 && ms < 100) ms *= 1000; // treat as seconds
+    return { action: 'wait', ms };
+  }
+
+  // screenshot=path [fullPage] [element=locator]
+  const screenshotMatch = trimmed.match(/^screenshot=(.+)$/);
+  if (screenshotMatch) {
+    const rest = screenshotMatch[1].trim();
+    const parts = rest.split(/\s+/);
+    const path = parts[0] || 'screenshot.png';
+    let fullPage = false;
+    let element: string | undefined;
+    for (let i = 1; i < parts.length; i++) {
+      if (parts[i].toLowerCase() === 'fullpage') fullPage = true;
+      else if (parts[i].toLowerCase().startsWith('element=')) {
+        element = parts[i].slice(8).trim();
+      }
+    }
+    return { action: 'screenshot', path, fullPage: fullPage || undefined, element };
+  }
+
+  // switchTab=0 (0-based index)
+  const switchTabMatch = trimmed.match(/^switchTab=(\d+)$/);
+  if (switchTabMatch) {
+    return { action: 'switchTab', index: parseInt(switchTabMatch[1], 10) };
+  }
+
+  // frame=main | frame=selector | frame=sel1,sel2 (nested)
+  const frameMatch = trimmed.match(/^frame=(.+)$/);
+  if (frameMatch) {
+    return { action: 'frame', selector: frameMatch[1].trim() };
+  }
+
+  // select=<locator>=value:x or select=<locator>=label:Text
+  const selectMatch = trimmed.match(/^select=(.+)$/);
+  if (selectMatch) {
+    const rest = selectMatch[1].trim();
+    const valueIdx = rest.indexOf('=value:');
+    const labelIdx = rest.indexOf('=label:');
+    if (valueIdx !== -1) {
+      const locator = rest.slice(0, valueIdx).trim();
+      const value = rest.slice(valueIdx + 7).trim();
+      return { action: 'select', locator, option: { value } };
+    }
+    if (labelIdx !== -1) {
+      const locator = rest.slice(0, labelIdx).trim();
+      const label = rest.slice(labelIdx + 7).trim();
+      return { action: 'select', locator, option: { label } };
+    }
   }
 
   // goto:<url>

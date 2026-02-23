@@ -157,9 +157,51 @@ async function runConfig(configPath: string): Promise<void> {
   if (result.failed > 0) process.exit(1);
 }
 
+const FLAG_TAG = '--tag';
+const FLAG_TAGS = '--tags';
+const FLAG_T = '-t';
+
+/** True if the arg looks like a file/dir pattern (path or test extension). */
+function looksLikePattern(arg: string): boolean {
+  return arg.includes('/') || arg.includes('\\') || /\.(test|spec)\.(js|ts)$/i.test(arg) || arg.includes('*');
+}
+
+/** Parse argv for --tag / -t and return { tags, pattern }. Reads entire argv so "file.js --tag smoke" works. */
+function parseTagArgs(): { tags: string[]; pattern: string | undefined } {
+  const tags: string[] = [];
+  let pattern: string | undefined;
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === FLAG_TAG || a === FLAG_TAGS || a === FLAG_T) {
+      if (i + 1 < argv.length) {
+        tags.push(...argv[++i].split(',').map((s) => s.trim()).filter(Boolean));
+      }
+    } else if (a.startsWith('--tag=')) {
+      tags.push(...a.slice(6).split(',').map((s) => s.trim()).filter(Boolean));
+    } else if (a.startsWith('-t=')) {
+      tags.push(...a.slice(3).split(',').map((s) => s.trim()).filter(Boolean));
+    } else if (!a.startsWith('-') && looksLikePattern(a) && pattern === undefined) {
+      pattern = a;
+    }
+  }
+  return { tags, pattern };
+}
+
+/** First non-flag argument that looks like a pattern (path or test file). */
+function firstPatternArg(): string | undefined {
+  const argv = process.argv.slice(2);
+  for (const a of argv) {
+    if (a === FLAG_TAG || a === FLAG_TAGS || a === FLAG_T || a.startsWith('--tag=') || a.startsWith('-t=')) continue;
+    if (a.startsWith('-') && a !== '-') continue;
+    if (looksLikePattern(a)) return a;
+  }
+  return undefined;
+}
+
 async function main(): Promise<void> {
-  const arg = process.argv[2];
-  if (arg === 'init') {
+  const argv = process.argv.slice(2);
+  if (argv.includes('init')) {
     init();
     process.exit(0);
     return;
@@ -167,9 +209,9 @@ async function main(): Promise<void> {
 
   const cwd = process.cwd();
 
-  // cstesting run login.conf  → run config file
-  if (arg === 'run') {
-    const configPath = process.argv[3];
+  if (argv.includes('run')) {
+    const runIdx = argv.indexOf('run');
+    const configPath = argv[runIdx + 1];
     if (!configPath) {
       console.error('Usage: cstesting run <config.conf>');
       process.exit(1);
@@ -177,6 +219,9 @@ async function main(): Promise<void> {
     await runConfig(configPath);
     return;
   }
+
+  const { tags, pattern: tagPattern } = parseTagArgs();
+  const arg = tagPattern ?? firstPatternArg();
 
   // cstesting login.conf  → run config file if extension is .conf or .config
   if (arg) {
@@ -209,6 +254,10 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (tags.length > 0) {
+    console.log(`Running tests with tags: ${tags.join(', ')}\n`);
+  }
+
   const totalResult: RunResult = {
     passed: 0,
     failed: 0,
@@ -228,7 +277,10 @@ async function main(): Promise<void> {
       console.error(`Failed to load ${file}:`, err);
       process.exit(1);
     }
-    const result = await run();
+    const rel = path.relative(cwd, file);
+    const result = await run(
+      tags.length > 0 ? { tags, file: rel } : { file: rel }
+    );
     totalResult.passed += result.passed;
     totalResult.failed += result.failed;
     totalResult.skipped += result.skipped;
@@ -238,7 +290,6 @@ async function main(): Promise<void> {
     totalResult.passedTests.push(...result.passedTests);
     totalResult.skippedTests.push(...result.skippedTests);
 
-    const rel = path.relative(cwd, file);
     console.log(`\n ${rel}`);
     if (result.errors.length > 0) {
       for (const { suite, test, error } of result.errors) {

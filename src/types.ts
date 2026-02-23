@@ -5,11 +5,18 @@
 export type TestFn = () => void | Promise<void>;
 export type HookFn = () => void | Promise<void>;
 
+/** Options for describe() or it() when using tags. */
+export interface TestTagOptions {
+  tags: string[];
+}
+
 export interface TestCase {
   name: string;
   fn: TestFn;
   only: boolean;
   skip: boolean;
+  /** Tags for this test (e.g. ['smoke', 'regression']). Inherited from suite if not set. */
+  tags?: string[];
 }
 
 export interface TestSuite {
@@ -22,6 +29,8 @@ export interface TestSuite {
   afterEach: HookFn[];
   only: boolean;
   skip: boolean;
+  /** Tags applied to all tests in this suite (and nested suites) unless overridden. */
+  tags?: string[];
 }
 
 export interface TestResultEntry {
@@ -29,6 +38,10 @@ export interface TestResultEntry {
   test: string;
   duration?: number;
   steps?: string[];
+  /** Source file path (e.g. relative path from CLI). */
+  file?: string;
+  /** Tags for this test (for report and search). */
+  tags?: string[];
 }
 
 export interface RunResult {
@@ -37,7 +50,15 @@ export interface RunResult {
   skipped: number;
   total: number;
   duration: number;
-  errors: Array<{ suite: string; test: string; error: Error; duration?: number; steps?: string[] }>;
+  errors: Array<{
+    suite: string;
+    test: string;
+    error: Error;
+    duration?: number;
+    steps?: string[];
+    file?: string;
+    tags?: string[];
+  }>;
   passedTests: Array<TestResultEntry>;
   skippedTests: Array<TestResultEntry>;
 }

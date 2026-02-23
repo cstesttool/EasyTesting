@@ -6,7 +6,7 @@ import type { RunResult } from './types';
 import type { ParsedConfig, ConfigStep } from './config-parser';
 import { parseConfigFile } from './config-parser';
 import { createBrowser, resolveSelector } from './browser';
-import type { BrowserApi } from './browser';
+import type { BrowserApi, FrameHandle } from './browser';
 
 function stepLabel(step: ConfigStep): string {
   switch (step.action) {
@@ -16,10 +16,36 @@ function stepLabel(step: ConfigStep): string {
       return `type ${step.label}`;
     case 'click':
       return `click ${step.locator}`;
+    case 'wait':
+      return `wait ${step.ms}ms`;
+    case 'screenshot':
+      return `screenshot ${step.path}${step.fullPage ? ' fullPage' : ''}${step.element ? ' element=' + step.element : ''}`;
+    case 'doubleClick':
+      return `doubleClick ${step.locator}`;
+    case 'rightClick':
+      return `rightClick ${step.locator}`;
+    case 'hover':
+      return `hover ${step.locator}`;
+    case 'switchTab':
+      return `switchTab ${step.index}`;
+    case 'frame':
+      return `frame ${step.selector}`;
+    case 'check':
+      return `check ${step.locator}`;
+    case 'uncheck':
+      return `uncheck ${step.locator}`;
+    case 'select':
+      return `select ${step.locator}`;
     default:
       return String(step);
   }
 }
+
+/** Common interface for browser or frame (click, type, etc.). */
+type PageLike = Pick<
+  BrowserApi,
+  'click' | 'type' | 'doubleClick' | 'rightClick' | 'hover' | 'check' | 'uncheck' | 'select' | 'waitForSelector'
+>;
 
 /** Escape for use inside a JS expression string. */
 function escapeForEval(s: string): string {
@@ -55,7 +81,20 @@ async function fillInputByDom(browser: BrowserApi, selector: string, value: stri
   await browser.evaluate(expr);
 }
 
-async function executeStep(browser: BrowserApi, step: ConfigStep): Promise<void> {
+/** Context for steps that can run in main page or inside a frame. */
+interface RunContext {
+  browser: BrowserApi;
+  currentFrame: FrameHandle | null;
+}
+
+function getTarget(ctx: RunContext): PageLike {
+  return (ctx.currentFrame ?? ctx.browser) as PageLike;
+}
+
+async function executeStep(ctx: RunContext, step: ConfigStep): Promise<void> {
+  const { browser } = ctx;
+  const target = getTarget(ctx);
+
   switch (step.action) {
     case 'goto': {
       await browser.goto(step.url);
@@ -65,21 +104,87 @@ async function executeStep(browser: BrowserApi, step: ConfigStep): Promise<void>
           new Promise((_, reject) => setTimeout(() => reject(new Error('Load timeout')), 15000)),
         ]);
       } catch {
-        // Page load timed out; continue anyway (page may still be usable)
+        // Page load timed out; continue anyway
       }
       await new Promise((r) => setTimeout(r, 800));
       return;
     }
-    case 'type': {
-      await browser.waitForSelector(step.locator, { timeout: 15000 });
+    case 'wait': {
+      await new Promise((r) => setTimeout(r, step.ms));
+      return;
+    }
+    case 'screenshot': {
+      await browser.getScreenshot({
+        path: step.path,
+        fullPage: step.fullPage,
+        selector: step.element,
+      });
+      return;
+    }
+    case 'switchTab': {
+      await browser.switchToTab(step.index);
       await new Promise((r) => setTimeout(r, 300));
-      await fillInputByDom(browser, step.locator, step.value);
+      return;
+    }
+    case 'frame': {
+      const raw = step.selector.trim().toLowerCase();
+      if (raw === 'main' || raw === '') {
+        ctx.currentFrame = null;
+        return;
+      }
+      const parts = step.selector.split(',').map((s) => s.trim()).filter(Boolean);
+      let frame: FrameHandle = browser.frame(parts[0]);
+      for (let i = 1; i < parts.length; i++) {
+        frame = frame.frame(parts[i]);
+      }
+      ctx.currentFrame = frame;
+      return;
+    }
+    case 'type': {
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await new Promise((r) => setTimeout(r, 300));
+      if (ctx.currentFrame) {
+        await ctx.currentFrame.type(step.locator, step.value);
+      } else {
+        await fillInputByDom(browser, step.locator, step.value);
+      }
       return;
     }
     case 'click': {
-      await browser.waitForSelector(step.locator, { timeout: 15000 });
-      await browser.click(step.locator);
-      await browser.waitForLoad();
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await target.click(step.locator);
+      if (!ctx.currentFrame) await browser.waitForLoad();
+      return;
+    }
+    case 'doubleClick': {
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await target.doubleClick(step.locator);
+      return;
+    }
+    case 'rightClick': {
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await target.rightClick(step.locator);
+      return;
+    }
+    case 'hover': {
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await target.hover(step.locator);
+      return;
+    }
+    case 'check': {
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await target.check(step.locator);
+      return;
+    }
+    case 'uncheck': {
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await target.uncheck(step.locator);
+      return;
+    }
+    case 'select': {
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      const opt = step.option.value != null ? { value: step.option.value } : { label: step.option.label! };
+      await target.select(step.locator, opt);
       return;
     }
   }
@@ -130,13 +235,14 @@ export async function runConfigFile(configPath: string, options?: { headless?: b
 
       let failed = false;
       let lastError: Error | null = null;
+      const runCtx: RunContext = { browser, currentFrame: null };
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
         const label = stepLabel(step);
         stepLabels.push(label);
         console.log('    Step', i + 1 + ':', label);
         try {
-          await executeStep(browser, step);
+          await executeStep(runCtx, step);
           console.log('      OK');
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
@@ -155,6 +261,7 @@ export async function runConfigFile(configPath: string, options?: { headless?: b
           error: lastError,
           duration,
           steps: stepLabels,
+          file: configName,
         });
       } else {
         result.passed++;
@@ -163,6 +270,7 @@ export async function runConfigFile(configPath: string, options?: { headless?: b
           test: testCaseName,
           duration,
           steps: stepLabels,
+          file: configName,
         });
       }
     }

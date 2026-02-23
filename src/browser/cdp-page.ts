@@ -3,6 +3,8 @@
  * No Playwright, no Cypress — raw CDP via chrome-remote-interface.
  */
 
+import * as fs from 'fs';
+
 interface EvalResult {
   result?: { type: string; value?: unknown };
 }
@@ -27,6 +29,15 @@ export type DialogHandler = (
 /** String (substring or glob) or RegExp for URL matching in waitForURL. */
 export type URLPattern = string | RegExp;
 
+/** Clip region for Page.captureScreenshot (CSS pixels). scale defaults to 1; CDP requires it when clip is set. */
+export interface ScreenshotClip {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale?: number;
+}
+
 export type CDPClient = {
   Page: {
     enable(): Promise<void>;
@@ -34,6 +45,13 @@ export type CDPClient = {
     loadEventFired(): Promise<unknown>;
     on(event: 'javascriptDialogOpening', callback: (params: DialogOpeningParams) => void): void;
     handleJavaScriptDialog(params: { accept: boolean; promptText?: string }): Promise<void>;
+    getLayoutMetrics(): Promise<{ contentSize?: { width: number; height: number } }>;
+    captureScreenshot(params?: {
+      format?: 'png' | 'jpeg';
+      quality?: number;
+      clip?: ScreenshotClip;
+      captureBeyondViewport?: boolean;
+    }): Promise<{ data: string }>;
   };
   Runtime: { evaluate(params: { expression: string; returnByValue?: boolean }): Promise<EvalResult> };
   Input: { dispatchMouseEvent(params: { type: string; x: number; y: number; button?: string; clickCount?: number }): Promise<void>; dispatchKeyEvent(params: { type: string; text?: string; key?: string }): Promise<void> };
@@ -81,6 +99,20 @@ export interface PageApi {
   isEditable(selector: string, index?: LocatorIndex): Promise<boolean>;
   /** Whether checkbox/radio is checked, option is selected, or select has a selected option. */
   isSelected(selector: string, index?: LocatorIndex): Promise<boolean>;
+  /**
+   * Capture a screenshot. Returns PNG/JPEG bytes as a Buffer.
+   * - No options or fullPage: true — full scrollable page.
+   * - selector — screenshot of the first element matching the selector (scrolls into view).
+   * Optional path writes the buffer to a file.
+   */
+  getScreenshot(options?: {
+    path?: string;
+    fullPage?: boolean;
+    selector?: string;
+    index?: LocatorIndex;
+    format?: 'png' | 'jpeg';
+    quality?: number;
+  }): Promise<Buffer>;
 }
 
 function getCenter(rect: { x: number; y: number; width: number; height: number }): { x: number; y: number } {
@@ -1292,6 +1324,64 @@ export function createPage(client: CDPClient): PageApi {
         throwLocatorError(value as { error: string; count: number; selector: string; index?: number }, selector);
       }
       return (value as { value?: boolean }).value === true;
+    },
+
+    async getScreenshot(options?: {
+      path?: string;
+      fullPage?: boolean;
+      selector?: string;
+      index?: LocatorIndex;
+      format?: 'png' | 'jpeg';
+      quality?: number;
+    }): Promise<Buffer> {
+      const format = options?.format ?? 'png';
+      const quality = options?.quality;
+      let clip: ScreenshotClip | undefined;
+      let captureBeyondViewport = false;
+
+      if (options?.selector) {
+        const resolved = resolveSelector(options.selector);
+        const useXPath = isXPath(options.selector);
+        const idx = options.index === 0 ? 'first' : options.index;
+        const expr =
+          idx !== undefined && idx !== null
+            ? useXPath
+              ? buildFindWithIndexExpressionXPath(resolved, idx === 'last' ? 'last' : idx === 'first' ? 'first' : idx)
+              : buildFindWithIndexExpression(resolved, idx === 'last' ? 'last' : idx === 'first' ? 'first' : idx)
+            : useXPath
+              ? buildStrictFindExpressionXPath(resolved)
+              : buildStrictFindExpression(resolved);
+        const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
+        const value = result?.type === 'object' && result && 'value' in result ? result.value : null;
+        if (!value || typeof value !== 'object') {
+          throw new Error(`getScreenshot: could not resolve selector \`${options.selector}\``);
+        }
+        if ('error' in value && typeof (value as { error?: string }).error === 'string') {
+          throwLocatorError(value as { error: string; count: number; selector: string; index?: number }, options.selector);
+        }
+        const rect = value as { x: number; y: number; width: number; height: number };
+        clip = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 };
+      } else if (options?.fullPage) {
+        const metrics = await client.Page.getLayoutMetrics();
+        const contentSize = metrics.contentSize;
+        if (!contentSize || contentSize.width <= 0 || contentSize.height <= 0) {
+          throw new Error('getScreenshot(fullPage): could not get page layout metrics');
+        }
+        clip = { x: 0, y: 0, width: contentSize.width, height: contentSize.height, scale: 1 };
+        captureBeyondViewport = true;
+      }
+
+      const params: { format?: 'png' | 'jpeg'; quality?: number; clip?: ScreenshotClip; captureBeyondViewport?: boolean } = { format };
+      if (quality != null && format === 'jpeg') params.quality = quality;
+      if (clip) params.clip = clip;
+      if (captureBeyondViewport) params.captureBeyondViewport = true;
+
+      const { data } = await client.Page.captureScreenshot(params);
+      const buffer = Buffer.from(data, 'base64');
+      if (options?.path) {
+        fs.writeFileSync(options.path, buffer);
+      }
+      return buffer;
     },
   };
 }

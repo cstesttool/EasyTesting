@@ -1,6 +1,6 @@
 /**
  * HTML report generation. Writes to report/ folder (created if missing).
- * Test rows are expandable: click a test to open and see executed steps.
+ * Report features: group by file, search by file/test/tag, summary bar, click test for details (steps, error).
  */
 
 import * as path from 'path';
@@ -19,7 +19,14 @@ function escapeHtml(s: string): string {
 function formatDuration(ms: number | undefined): string {
   if (ms === undefined || ms < 0) return '—';
   if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(2)}s`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function formatTotalTime(ms: number): string {
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000);
+  const s = ((ms % 60000) / 1000).toFixed(0);
+  return `${m}m ${s}s`;
 }
 
 export interface ReportOptions {
@@ -37,68 +44,117 @@ interface TestRow {
   duration?: number;
   steps?: string[];
   error?: Error;
+  file?: string;
+  tags?: string[];
 }
 
-function buildTestRowHtml(row: TestRow): string {
+/** Build searchable text for a test (file + suite + test + tags). */
+function testSearchText(row: TestRow): string {
+  const parts = [
+    row.file ?? '',
+    row.suite,
+    row.test,
+    ...(row.tags ?? []),
+  ];
+  return parts.join(' ').toLowerCase();
+}
+
+/** Build HTML for one test row (list item + expandable details). */
+function buildTestRowHtml(row: TestRow, index: number): string {
   const durationStr = formatDuration(row.duration);
   const statusLabel = row.status === 'pass' ? 'Passed' : row.status === 'fail' ? 'Failed' : 'Skipped';
+  const searchText = escapeHtml(testSearchText(row));
+  const description = `${escapeHtml(row.suite)} ${row.suite && row.test ? '›' : ''} ${escapeHtml(row.test)}`.trim();
 
   const hasSteps = row.steps && row.steps.length > 0;
   const stepsHtml = hasSteps
     ? `
-    <div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <div class="pw-steps-list">
+    <div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <div class="report-steps-list">
         ${row.steps!.map((s, i) => `
-        <div class="pw-step-row">
-          <span class="pw-step-icon pw-step-icon-passed" aria-hidden="true">✓</span>
-          <span class="pw-step-index">${i + 1}</span>
-          <span class="pw-step-title">${escapeHtml(s)}</span>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">${i + 1}</span>
+          <span class="report-step-title">${escapeHtml(s)}</span>
         </div>`).join('')}
       </div>
     </div>`
-    : `<div class="pw-steps-section">
-      <div class="pw-steps-title">Steps</div>
-      <p class="pw-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
+    : `<div class="report-section">
+      <div class="report-section-title">Steps</div>
+      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
     </div>`;
 
   const errorBlock =
     row.error !== undefined
-      ? `<div class="pw-error-section">
-        <div class="pw-steps-title">Error</div>
-        <div class="pw-error-content">
-          <pre class="pw-error-message">${escapeHtml(row.error.message)}</pre>
-          ${row.error.stack ? `<pre class="pw-error-stack">${escapeHtml(row.error.stack)}</pre>` : ''}
+      ? `<div class="report-section report-error-section">
+        <div class="report-section-title">Error</div>
+        <div class="report-error-content">
+          <pre class="report-error-message">${escapeHtml(row.error.message)}</pre>
+          ${row.error.stack ? `<pre class="report-error-stack">${escapeHtml(row.error.stack)}</pre>` : ''}
+          <button type="button" class="report-copy-btn" data-copy="error">Copy</button>
         </div>
       </div>`
       : '';
 
-  const detailsHtml = `
-    <div class="test-row-details">
-      ${stepsHtml}
-      ${errorBlock}
-    </div>`;
+  const tagsHtml =
+    row.tags && row.tags.length > 0
+      ? `<div class="report-tags-row">${row.tags.map((t) => `<span class="report-tag">${escapeHtml(t)}</span>`).join('')}</div>`
+      : '';
+
+  const fileLine = row.file ? `<div class="report-source">${escapeHtml(row.file)}</div>` : '';
 
   return `
-    <div class="test-row test-row-${row.status}" data-expanded="false">
-      <span class="test-dot ${row.status}"></span>
-      <div class="test-body">
-        <div class="test-row-header" role="button" tabindex="0" aria-expanded="false" aria-label="Click to expand and see executed steps">
-          <span class="test-name">${escapeHtml(row.suite)} &gt; ${escapeHtml(row.test)}</span>
-          <span class="test-meta">
-            <span class="test-duration" title="Duration">${durationStr}</span>
-            <span class="test-status status-${row.status}">${statusLabel}</span>
-            <span class="test-chevron" aria-hidden="true">▶</span>
+    <div class="report-test-row report-test-${row.status}" data-expanded="false" data-search="${searchText}" data-index="${index}">
+      <span class="report-dot ${row.status}"></span>
+      <div class="report-test-body">
+        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
+          <span class="report-test-name">${description}</span>
+          <span class="report-test-meta">
+            <span class="report-test-duration" title="Duration">${durationStr}</span>
+            <span class="report-status-badge status-${row.status}">${statusLabel}</span>
+            <span class="report-chevron">▶</span>
           </span>
         </div>
-        ${detailsHtml}
+        ${tagsHtml}
+        ${fileLine}
+        <div class="report-test-details">
+          ${stepsHtml}
+          ${errorBlock}
+        </div>
       </div>
     </div>`;
 }
 
+/** Build HTML for a file group (collapsible section with test list). */
+function buildFileGroupHtml(fileKey: string, fileLabel: string, tests: TestRow[], startIndex: number): string {
+  const count = tests.length;
+  const passed = tests.filter((t) => t.status === 'pass').length;
+  const failed = tests.filter((t) => t.status === 'fail').length;
+  const skipped = tests.filter((t) => t.status === 'skip').length;
+  const testsHtml = tests.map((t, i) => buildTestRowHtml(t, startIndex + i)).join('');
+  const fileId = 'file-' + escapeHtml(fileKey).replace(/[^a-z0-9-]/gi, '_');
+
+  return `
+  <div class="report-file-group" data-file="${escapeHtml(fileKey)}" data-search="${escapeHtml((fileKey + ' ' + tests.map(testSearchText).join(' ')).toLowerCase())}">
+    <div class="report-file-header" role="button" tabindex="0" aria-expanded="true" data-target="${fileId}">
+      <span class="report-file-chevron">▼</span>
+      <span class="report-file-path">${escapeHtml(fileLabel)}</span>
+      <span class="report-file-count">${count} test${count !== 1 ? 's' : ''}</span>
+      <span class="report-file-badges">
+        ${passed > 0 ? `<span class="report-file-badge pass">✓ ${passed}</span>` : ''}
+        ${failed > 0 ? `<span class="report-file-badge fail">× ${failed}</span>` : ''}
+        ${skipped > 0 ? `<span class="report-file-badge skip">⊘ ${skipped}</span>` : ''}
+      </span>
+    </div>
+    <div id="${fileId}" class="report-file-tests">
+      ${testsHtml}
+    </div>
+  </div>`;
+}
+
 export function generateHtmlReport(result: RunResult): string {
   const title = 'CSTesting Report';
-  const durationSec = (result.duration / 1000).toFixed(2);
   const passed = result.passed;
   const failed = result.failed;
   const skipped = result.skipped;
@@ -107,35 +163,64 @@ export function generateHtmlReport(result: RunResult): string {
   const skippedTests = result.skippedTests ?? [];
   const errors = result.errors ?? [];
 
-  const pct = total > 0 ? { pass: (passed / total) * 100, fail: (failed / total) * 100, skip: (skipped / total) * 100 } : { pass: 0, fail: 0, skip: 0 };
-
   const allTests: TestRow[] = [
-    ...passedTests.map((t) => ({ suite: t.suite, test: t.test, status: 'pass' as Status, duration: t.duration, steps: t.steps })),
-    ...errors.map((e) => ({ suite: e.suite, test: e.test, status: 'fail' as Status, duration: e.duration, steps: e.steps, error: e.error })),
-    ...skippedTests.map((t) => ({ suite: t.suite, test: t.test, status: 'skip' as Status, duration: t.duration ?? 0, steps: t.steps })),
+    ...passedTests.map((t) => ({
+      suite: t.suite,
+      test: t.test,
+      status: 'pass' as Status,
+      duration: t.duration,
+      steps: t.steps,
+      file: t.file,
+      tags: t.tags,
+    })),
+    ...errors.map((e) => ({
+      suite: e.suite,
+      test: e.test,
+      status: 'fail' as Status,
+      duration: e.duration,
+      steps: e.steps,
+      error: e.error,
+      file: e.file,
+      tags: e.tags,
+    })),
+    ...skippedTests.map((t) => ({
+      suite: t.suite,
+      test: t.test,
+      status: 'skip' as Status,
+      duration: t.duration ?? 0,
+      steps: t.steps,
+      file: t.file,
+      tags: t.tags,
+    })),
   ];
 
-  const passedListHtml =
-    passedTests.length === 0
-      ? '<p class="empty-msg">No passed tests to show.</p>'
-      : passedTests.map((t) => buildTestRowHtml({ ...t, status: 'pass' })).join('');
+  // Group by file (use "(no file)" for empty)
+  const byFile = new Map<string, TestRow[]>();
+  for (const row of allTests) {
+    const key = row.file ?? '(no file)';
+    if (!byFile.has(key)) byFile.set(key, []);
+    byFile.get(key)!.push(row);
+  }
 
-  const failedListHtml =
-    errors.length === 0
-      ? '<p class="empty-msg">No failed tests.</p>'
-      : errors.map((e) => buildTestRowHtml({ suite: e.suite, test: e.test, status: 'fail', duration: e.duration, steps: e.steps, error: e.error })).join('');
+  let index = 0;
+  const fileGroupsHtml = Array.from(byFile.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([fileKey, tests]) => {
+      const html = buildFileGroupHtml(fileKey, fileKey, tests, index);
+      index += tests.length;
+      return html;
+    })
+    .join('');
 
-  const skippedListHtml =
-    skippedTests.length === 0
-      ? '<p class="empty-msg">No skipped tests.</p>'
-      : skippedTests.map((t) => buildTestRowHtml({ ...t, status: 'skip' })).join('');
-
-  const totalListHtml =
-    allTests.length === 0
-      ? '<p class="empty-msg">No tests to show.</p>'
-      : allTests.map((row) => buildTestRowHtml(row)).join('');
-
-  const defaultTab = failed > 0 ? 'fail' : total > 0 ? 'total' : passed > 0 ? 'pass' : 'skip';
+  const dateStr = new Date().toLocaleString(undefined, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const totalTimeStr = formatTotalTime(result.duration);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -145,158 +230,168 @@ export function generateHtmlReport(result: RunResult): string {
   <title>${escapeHtml(title)}</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 24px; background: #1a1a2e; color: #eee; line-height: 1.5; }
-    .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
-    h1 { margin: 0; font-size: 1.5rem; font-weight: 600; }
-    .summary-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-    .pill { padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: opacity 0.2s; border: 2px solid transparent; }
-    .pill:hover { opacity: 0.9; }
-    .pill.passed { background: #1b3d1b; color: #6f6; }
-    .pill.failed { background: #3d1b1b; color: #f66; }
-    .pill.skipped { background: #3d351b; color: #dd8; }
-    .pill.total { background: #1b2d3d; color: #8af; }
-    .pill.active { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
-    .bar-section { margin-bottom: 20px; }
-    .bar-label { font-size: 12px; color: #888; margin-bottom: 6px; }
-    .bar-container { display: flex; height: 24px; border-radius: 6px; overflow: hidden; background: #0d0d1a; }
-    .bar-seg { transition: width 0.2s; min-width: 2px; }
-    .bar-seg.passed { background: #2d5a2d; }
-    .bar-seg.failed { background: #5a2d2d; }
-    .bar-seg.skipped { background: #5a4d2d; }
-    .bar-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; }
-    .bar-legend span { display: flex; align-items: center; gap: 6px; }
-    .bar-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
-    .bar-legend .dot.passed { background: #6f6; }
-    .bar-legend .dot.failed { background: #f66; }
-    .bar-legend .dot.skipped { background: #aa8; }
-    .panel { display: none; margin-top: 16px; }
-    .panel.active { display: block; }
-    .panel h2 { font-size: 1.1rem; margin: 0 0 12px; }
-    .panel.pass-panel h2 { color: #6f6; }
-    .panel.fail-panel h2 { color: #f88; }
-    .panel.skip-panel h2 { color: #aa8; }
-    .panel.total-panel h2 { color: #8af; }
-    .test-row { display: flex; align-items: flex-start; gap: 10px; padding: 0; margin-bottom: 8px; border-radius: 6px; background: #16213e; overflow: hidden; }
-    .test-row .test-body { flex: 1; min-width: 0; }
-    .test-row-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; cursor: pointer; transition: background 0.15s; }
-    .test-row-header:hover { background: #1a2744; }
-    .test-row-header:focus { outline: 2px solid #4a6fa5; outline-offset: 2px; }
-    .test-row.expanded .test-row-header { border-bottom: 1px solid #2a3555; }
-    .test-row.expanded .test-chevron { transform: rotate(90deg); }
-    .test-row-details { max-height: 0; overflow: hidden; transition: max-height 0.25s ease-out; }
-    .test-row.expanded .test-row-details { max-height: 2000px; transition: max-height 0.35s ease-in; }
-    .test-row-details > div { padding: 12px 12px 12px 22px; }
-    .test-name { font-weight: 500; word-break: break-word; }
-    .test-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; font-size: 13px; }
-    .test-duration { color: #888; }
-    .test-chevron { font-size: 10px; color: #888; transition: transform 0.2s; }
-    .test-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
-    .test-status.status-pass { background: #1b3d1b; color: #6f6; }
-    .test-status.status-fail { background: #3d1b1b; color: #f66; }
-    .test-status.status-skip { background: #3d351b; color: #aa8; }
-    .test-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin: 14px 0 0 10px; }
-    .test-dot.pass { background: #6f6; }
-    .test-dot.fail { background: #f66; }
-    .test-dot.skip { background: #aa8; }
-    .pw-steps-section { margin: 0 0 16px; }
-    .pw-steps-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 8px; }
-    .pw-steps-list { border: 1px solid #2a3555; border-radius: 6px; overflow: hidden; background: #0d0d1a; }
-    .pw-step-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #1a1a2e; min-height: 40px; }
-    .pw-step-row:last-child { border-bottom: none; }
-    .pw-step-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
-    .pw-step-icon-passed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
-    .pw-step-icon-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
-    .pw-step-index { color: #666; font-size: 12px; min-width: 20px; }
-    .pw-step-title { color: #e5e5e5; flex: 1; }
-    .pw-no-steps { color: #666; font-size: 13px; margin: 0; padding: 12px; }
-    .pw-no-steps code { background: #1a1a2e; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-    .pw-error-section { margin-top: 16px; border-top: 1px solid #2a3555; padding-top: 16px; }
-    .pw-error-content { border: 1px solid #3d1b1b; border-radius: 6px; background: rgba(127, 29, 29, 0.15); padding: 12px; }
-    .pw-error-message, .pw-error-stack { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #fca5a5; font-family: ui-monospace, monospace; }
-    .pw-error-stack { margin-top: 8px; font-size: 12px; opacity: 0.9; color: #94a3b8; }
-    .empty-msg { color: #888; margin: 0; }
-    .meta { font-size: 12px; color: #666; margin-top: 16px; }
+    body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #0f172a; color: #e2e8f0; line-height: 1.5; }
+    .report-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; padding: 16px 24px; background: #1e293b; border-bottom: 1px solid #334155; }
+    .report-search-wrap { flex: 1; min-width: 200px; max-width: 400px; }
+    .report-search-wrap input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid #475569; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 14px; }
+    .report-search-wrap input::placeholder { color: #64748b; }
+    .report-search-wrap input:focus { outline: 2px solid #3b82f6; outline-offset: 0; }
+    .report-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; }
+    .report-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; font-size: 14px; }
+    .report-summary-item { display: flex; align-items: center; gap: 6px; }
+    .report-summary-item.all { font-weight: 600; color: #94a3b8; }
+    .report-summary-item.passed { color: #22c55e; }
+    .report-summary-item.failed { color: #ef4444; }
+    .report-summary-item.skipped { color: #eab308; }
+    .report-meta { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .report-content { padding: 16px 24px 32px; }
+    .report-file-group { margin-bottom: 8px; border-radius: 8px; background: #1e293b; overflow: hidden; border: 1px solid #334155; }
+    .report-file-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; transition: background 0.15s; }
+    .report-file-header:hover { background: #334155; }
+    .report-file-chevron { font-size: 10px; color: #94a3b8; transition: transform 0.2s; }
+    .report-file-group.collapsed .report-file-chevron { transform: rotate(-90deg); }
+    .report-file-group.collapsed .report-file-tests { display: none; }
+    .report-file-path { font-weight: 600; color: #e2e8f0; word-break: break-all; flex: 1; min-width: 0; }
+    .report-file-count { font-size: 12px; color: #64748b; }
+    .report-file-badges { display: flex; gap: 8px; }
+    .report-file-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+    .report-file-badge.pass { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-file-badge.fail { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .report-file-badge.skip { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+    .report-file-tests { padding: 0 8px 8px; }
+    .report-test-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 8px; border-radius: 6px; background: #0f172a; border: 1px solid #334155; overflow: hidden; }
+    .report-test-row.hidden { display: none !important; }
+    .report-file-group.hidden { display: none !important; }
+    .report-test-row .report-test-body { flex: 1; min-width: 0; }
+    .report-test-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 14px; cursor: pointer; transition: background 0.15s; }
+    .report-test-header:hover { background: #1e293b; }
+    .report-test-name { font-weight: 500; word-break: break-word; }
+    .report-test-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; font-size: 13px; }
+    .report-test-duration { color: #64748b; }
+    .report-chevron { font-size: 10px; color: #64748b; transition: transform 0.2s; }
+    .report-test-row.expanded .report-chevron { transform: rotate(90deg); }
+    .report-status-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .report-status-badge.status-pass { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-status-badge.status-fail { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .report-status-badge.status-skip { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+    .report-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin: 14px 0 0 10px; }
+    .report-dot.pass { background: #22c55e; }
+    .report-dot.fail { background: #ef4444; }
+    .report-dot.skip { background: #eab308; }
+    .report-tags-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
+    .report-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #334155; color: #94a3b8; }
+    .report-source { font-size: 11px; color: #64748b; padding: 0 14px 8px; font-family: ui-monospace, monospace; }
+    .report-test-details { max-height: 0; overflow: hidden; transition: max-height 0.25s ease-out; }
+    .report-test-row.expanded .report-test-details { max-height: 3000px; transition: max-height 0.35s ease-in; }
+    .report-test-details > div { padding: 12px 14px 12px 24px; border-top: 1px solid #334155; }
+    .report-section { margin: 0 0 16px; }
+    .report-section:last-child { margin-bottom: 0; }
+    .report-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 8px; }
+    .report-steps-list { border: 1px solid #334155; border-radius: 6px; overflow: hidden; background: #0f172a; }
+    .report-step-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #1e293b; }
+    .report-step-row:last-child { border-bottom: none; }
+    .report-step-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
+    .report-step-passed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-error-section .report-error-content { position: relative; border: 1px solid #7f1d1d; border-radius: 6px; background: rgba(127, 29, 29, 0.15); padding: 12px; }
+    .report-error-message, .report-error-stack { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #fca5a5; font-family: ui-monospace, monospace; }
+    .report-error-stack { margin-top: 8px; font-size: 12px; color: #94a3b8; }
+    .report-copy-btn { margin-top: 8px; padding: 6px 12px; font-size: 12px; border-radius: 4px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; cursor: pointer; }
+    .report-copy-btn:hover { background: #334155; }
+    .report-no-steps { color: #64748b; font-size: 13px; margin: 0; padding: 12px; }
+    .report-no-steps code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    .report-empty-msg { color: #64748b; padding: 24px; text-align: center; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>${escapeHtml(title)}</h1>
-    <div class="summary-pills">
-      <button type="button" class="pill total ${defaultTab === 'total' ? 'active' : ''}" data-tab="total" aria-pressed="${defaultTab === 'total'}">Total (${total})</button>
-      <button type="button" class="pill passed ${defaultTab === 'pass' ? 'active' : ''}" data-tab="pass" aria-pressed="${defaultTab === 'pass'}">Passed (${passed})</button>
-      <button type="button" class="pill failed ${defaultTab === 'fail' ? 'active' : ''}" data-tab="fail" aria-pressed="${defaultTab === 'fail'}">Failed (${failed})</button>
-      <button type="button" class="pill skipped ${defaultTab === 'skip' ? 'active' : ''}" data-tab="skip" aria-pressed="${defaultTab === 'skip'}">Skipped (${skipped})</button>
+  <div class="report-top">
+    <div class="report-search-wrap" style="position:relative">
+      <span class="report-search-icon" aria-hidden="true">🔍</span>
+      <input type="text" id="report-search" placeholder="Search by file name, test name, or tag..." autocomplete="off" />
+    </div>
+    <div class="report-summary-block">
+      <div class="report-summary">
+        <span class="report-summary-item all">All ${total}</span>
+        <span class="report-summary-item passed">✓ Passed ${passed}</span>
+        <span class="report-summary-item failed">× Failed ${failed}</span>
+        <span class="report-summary-item">Flaky 0</span>
+        <span class="report-summary-item skipped">Skipped ${skipped}</span>
+      </div>
+      <div class="report-meta">${escapeHtml(dateStr)} · Total time: ${totalTimeStr}</div>
     </div>
   </div>
 
-  <div class="bar-section">
-    <div class="bar-label">Result distribution</div>
-    <div class="bar-container" role="img" aria-label="Bar chart: passed ${pct.pass.toFixed(0)}%, failed ${pct.fail.toFixed(0)}%, skipped ${pct.skip.toFixed(0)}%">
-      <div class="bar-seg passed" style="width: ${pct.pass}%"></div>
-      <div class="bar-seg failed" style="width: ${pct.fail}%"></div>
-      <div class="bar-seg skipped" style="width: ${pct.skip}%"></div>
-    </div>
-    <div class="bar-legend">
-      <span><span class="dot passed"></span> Passed ${total > 0 ? pct.pass.toFixed(1) : 0}%</span>
-      <span><span class="dot failed"></span> Failed ${total > 0 ? pct.fail.toFixed(1) : 0}%</span>
-      <span><span class="dot skipped"></span> Skipped ${total > 0 ? pct.skip.toFixed(1) : 0}%</span>
-    </div>
-  </div>
-
-  <p class="meta">Duration: ${durationSec}s &middot; ${escapeHtml(new Date().toISOString())}</p>
-  <p class="meta">Click a test case to expand and see executed steps.</p>
-
-  <div id="panel-total" class="panel total-panel ${defaultTab === 'total' ? 'active' : ''}" role="region" aria-label="All tests">
-    <h2>All tests (${total})</h2>
-    <div class="panel-content">${totalListHtml}</div>
-  </div>
-  <div id="panel-pass" class="panel pass-panel ${defaultTab === 'pass' ? 'active' : ''}" role="region" aria-label="Passed tests">
-    <h2>Passed tests (${passed})</h2>
-    <div class="panel-content">${passedListHtml}</div>
-  </div>
-  <div id="panel-fail" class="panel fail-panel ${defaultTab === 'fail' ? 'active' : ''}" role="region" aria-label="Failed tests">
-    <h2>Failed tests (${failed})</h2>
-    <div class="panel-content">${failedListHtml}</div>
-  </div>
-  <div id="panel-skip" class="panel skip-panel ${defaultTab === 'skip' ? 'active' : ''}" role="region" aria-label="Skipped tests">
-    <h2>Skipped tests (${skipped})</h2>
-    <div class="panel-content">${skippedListHtml}</div>
+  <div class="report-content">
+    ${fileGroupsHtml || '<p class="report-empty-msg">No tests to show.</p>'}
   </div>
 
   <script>
-    (function() {
-      var defaultTab = ${JSON.stringify(defaultTab)};
-      var pills = document.querySelectorAll('.pill[data-tab]');
-      var panels = document.querySelectorAll('.panel');
-      function showTab(tab) {
-        pills.forEach(function(p) {
-          p.classList.toggle('active', p.getAttribute('data-tab') === tab);
-          p.setAttribute('aria-pressed', p.getAttribute('data-tab') === tab ? 'true' : 'false');
-        });
-        panels.forEach(function(panel) {
-          var panelTab = panel.id.replace('panel-', '');
-          panel.classList.toggle('active', panelTab === tab);
-        });
-      }
-      pills.forEach(function(p) {
-        p.addEventListener('click', function() { showTab(p.getAttribute('data-tab')); });
-      });
-      showTab(defaultTab);
+(function() {
+  var searchInput = document.getElementById('report-search');
+  var fileGroups = document.querySelectorAll('.report-file-group');
+  var testRows = document.querySelectorAll('.report-test-row');
 
-      document.querySelectorAll('.test-row-header').forEach(function(header) {
-        function toggle() {
-          var row = header.closest('.test-row');
-          var expanded = row.getAttribute('data-expanded') === 'true';
-          row.setAttribute('data-expanded', !expanded);
-          row.classList.toggle('expanded', !expanded);
-          header.setAttribute('aria-expanded', !expanded);
-        }
-        header.addEventListener('click', toggle);
-        header.addEventListener('keydown', function(e) {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-        });
+  function onSearch() {
+    var q = (searchInput.value || '').trim().toLowerCase();
+    if (!q) {
+      fileGroups.forEach(function(g) { g.classList.remove('hidden'); });
+      testRows.forEach(function(r) { r.classList.remove('hidden'); });
+      return;
+    }
+    fileGroups.forEach(function(group) {
+      var groupSearch = group.getAttribute('data-search') || '';
+      var fileMatch = groupSearch.indexOf(q) !== -1;
+      var tests = group.querySelectorAll('.report-test-row');
+      var anyVisible = false;
+      tests.forEach(function(row) {
+        var rowSearch = (row.getAttribute('data-search') || '');
+        var match = fileMatch || rowSearch.indexOf(q) !== -1;
+        row.classList.toggle('hidden', !match);
+        if (match) anyVisible = true;
       });
-    })();
+      group.classList.toggle('hidden', !anyVisible);
+    });
+  }
+  searchInput.addEventListener('input', onSearch);
+  searchInput.addEventListener('keydown', function(e) { if (e.key === 'Escape') { searchInput.value = ''; onSearch(); searchInput.blur(); } });
+
+  fileGroups.forEach(function(group) {
+    var header = group.querySelector('.report-file-header');
+    var targetId = header && header.getAttribute('data-target');
+    var target = targetId ? document.getElementById(targetId) : null;
+    if (!header || !target) return;
+    header.addEventListener('click', function() {
+      group.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', group.classList.contains('collapsed') ? 'false' : 'true');
+    });
+  });
+
+  testRows.forEach(function(row) {
+    var header = row.querySelector('.report-test-header');
+    if (!header) return;
+    function toggle() {
+      var expanded = row.getAttribute('data-expanded') === 'true';
+      row.setAttribute('data-expanded', !expanded);
+      row.classList.toggle('expanded', !expanded);
+      header.setAttribute('aria-expanded', !expanded);
+    }
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+
+  document.querySelectorAll('.report-copy-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var content = btn.closest('.report-error-content');
+      if (!content) return;
+      var pre = content.querySelector('.report-error-message');
+      var text = pre ? pre.textContent : '';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() { btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = 'Copy'; }, 1500); });
+      }
+    });
+  });
+})();
   </script>
 </body>
 </html>`;

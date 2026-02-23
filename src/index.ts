@@ -6,6 +6,7 @@
  */
 
 export { describe, it, beforeAll, afterAll, beforeEach, afterEach, run, resetRunner, step } from './runner';
+export type { RunOptions } from './runner';
 export { expect, AssertionError } from './assertions';
 export { createBrowser } from './browser';
 export { requestApi as request, ResponseAssertions } from './api-request';
