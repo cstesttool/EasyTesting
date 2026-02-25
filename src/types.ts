@@ -56,6 +56,8 @@ export interface RunResult {
     error: Error;
     duration?: number;
     steps?: string[];
+    /** 0-based index of the step that failed (for config runs). */
+    failedStepIndex?: number;
     file?: string;
     tags?: string[];
   }>;

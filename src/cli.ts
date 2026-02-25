@@ -10,6 +10,7 @@ import { AssertionError } from './assertions';
 import { writeReport } from './report';
 import { runConfigFile } from './config-runner';
 import type { RunResult } from './types';
+import { startRecording, stopRecording, exportRecorded } from './recorder';
 
 const defaultPattern = '**/*.test.js';
 const TEST_EXTENSIONS = ['.test.js', '.spec.js', '.test.ts', '.spec.ts'];
@@ -134,7 +135,7 @@ function resolveConfigPath(configPath: string): string | null {
 }
 
 /** Run a config file (e.g. login.conf) and write report. */
-async function runConfig(configPath: string): Promise<void> {
+async function runConfig(configPath: string, options?: { headless?: boolean }): Promise<void> {
   const cwd = process.cwd();
   const resolved = resolveConfigPath(configPath);
   if (!resolved) {
@@ -143,11 +144,15 @@ async function runConfig(configPath: string): Promise<void> {
     process.exit(1);
   }
   console.log(`Running config: ${path.relative(cwd, resolved) || configPath}\n`);
-  const result = await runConfigFile(resolved);
+  const result = await runConfigFile(resolved, options);
   if (result.errors.length > 0) {
+    console.error('\nFailed test(s):');
     for (const { suite, test, error } of result.errors) {
-      console.log(`  ✗ ${suite} > ${test}`);
-      console.log(`    ${error.message}`);
+      console.error(`  ✗ ${suite} > ${test}`);
+      console.error(`    ${error.message}`);
+      if (error.stack) {
+        console.error(error.stack.split('\n').slice(1, 4).map((l) => `    ${l.trim()}`).join('\n'));
+      }
     }
   }
   console.log('\n' + '─'.repeat(50));
@@ -161,9 +166,9 @@ const FLAG_TAG = '--tag';
 const FLAG_TAGS = '--tags';
 const FLAG_T = '-t';
 
-/** True if the arg looks like a file/dir pattern (path or test extension). */
+/** True if the arg looks like a file/dir pattern (path, test file, or config file). */
 function looksLikePattern(arg: string): boolean {
-  return arg.includes('/') || arg.includes('\\') || /\.(test|spec)\.(js|ts)$/i.test(arg) || arg.includes('*');
+  return arg.includes('/') || arg.includes('\\') || /\.(test|spec)\.(js|ts)$/i.test(arg) || /\.(conf|config)$/i.test(arg) || arg.includes('*');
 }
 
 /** Parse argv for --tag / -t and return { tags, pattern }. Reads entire argv so "file.js --tag smoke" works. */
@@ -207,16 +212,66 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (argv.includes('record')) {
+    const outIdx = argv.indexOf('--output');
+    const formatIdx = argv.indexOf('--format');
+    let output = outIdx !== -1 && argv[outIdx + 1] ? argv[outIdx + 1] : undefined;
+    let format: 'conf' | 'js' | 'ts' = 'conf';
+    if (formatIdx !== -1 && argv[formatIdx + 1]) {
+      const f = argv[formatIdx + 1];
+      if (f === 'js' || f === 'ts') format = f;
+    }
+    if (output && format === 'conf') {
+      if (output.endsWith('.test.js') || output.endsWith('.js')) format = 'js';
+      else if (output.endsWith('.test.ts') || output.endsWith('.ts')) format = 'ts';
+    }
+    const recordArgv = argv.filter((a) => a !== 'record' && a !== '--output' && a !== '--format' && (outIdx === -1 || a !== argv[outIdx + 1]) && (formatIdx === -1 || a !== argv[formatIdx + 1]));
+    const urlArg = recordArgv.find((a) => !a.startsWith('-') && (a.startsWith('http') || a.startsWith('file') || a.startsWith('https')));
+    const initialUrl = urlArg || undefined;
+
+    let recordingExiting = false;
+    const doStopAndExit = (exitCode: number) => {
+      if (recordingExiting) return;
+      recordingExiting = true;
+      stopRecording();
+      exportRecorded({ output, format });
+      process.exit(exitCode);
+    };
+    const onExit = () => doStopAndExit(0);
+    process.on('SIGINT', onExit);
+    process.on('SIGTERM', onExit);
+
+    const unhandledRejection = (reason: unknown) => {
+      console.error('Recording error (unhandled rejection):', reason);
+      stopRecording();
+      process.exit(1);
+    };
+    process.on('unhandledRejection', unhandledRejection);
+
+    try {
+      await startRecording(initialUrl, {
+        onBrowserClose: () => doStopAndExit(0),
+      });
+    } catch (err) {
+      console.error('Recording failed:', err instanceof Error ? err.message : err);
+      if (err instanceof Error && err.stack) console.error(err.stack);
+      stopRecording();
+      process.exit(1);
+    }
+    return;
+  }
+
   const cwd = process.cwd();
 
   if (argv.includes('run')) {
     const runIdx = argv.indexOf('run');
     const configPath = argv[runIdx + 1];
     if (!configPath) {
-      console.error('Usage: cstesting run <config.conf>');
+      console.error('Usage: cstesting run <config.conf> [--headed]');
       process.exit(1);
     }
-    await runConfig(configPath);
+    const headed = argv.includes('--headed');
+    await runConfig(configPath, headed ? { headless: false } : undefined);
     return;
   }
 
@@ -229,7 +284,8 @@ async function main(): Promise<void> {
     if (ext === '.conf' || ext === '.config') {
       const configResolved = resolveConfigPath(arg);
       if (configResolved) {
-        await runConfig(arg);
+        const headed = argv.includes('--headed');
+        await runConfig(arg, headed ? { headless: false } : undefined);
         return;
       }
     }

@@ -68,6 +68,9 @@
     .report-step-row:last-child { border-bottom: none; }
     .report-step-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
     .report-step-passed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-step-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .report-step-skipped { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+    .report-step-skipped-label { font-size: 11px; color: #64748b; font-weight: normal; }
     .report-error-section .report-error-content { position: relative; border: 1px solid #7f1d1d; border-radius: 6px; background: rgba(127, 29, 29, 0.15); padding: 12px; }
     .report-error-message, .report-error-stack { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #fca5a5; font-family: ui-monospace, monospace; }
     .report-error-stack { margin-top: 8px; font-size: 12px; color: #94a3b8; }
@@ -86,44 +89,44 @@
     </div>
     <div class="report-summary-block">
       <div class="report-summary">
-        <span class="report-summary-item all">All 7</span>
+        <span class="report-summary-item all">All 1</span>
         <span class="report-summary-item passed">✓ Passed 1</span>
         <span class="report-summary-item failed">× Failed 0</span>
         <span class="report-summary-item">Flaky 0</span>
-        <span class="report-summary-item skipped">Skipped 6</span>
+        <span class="report-summary-item skipped">Skipped 0</span>
       </div>
-      <div class="report-meta">02/23/2026, 10:21:20 PM · Total time: 7.8s</div>
+      <div class="report-meta">02/24/2026, 09:29:49 PM · Total time: 28.9s</div>
     </div>
   </div>
 
   <div class="report-content">
     
-  <div class="report-file-group" data-file="example\browser1.test.js" data-search="example\browser1.test.js example\browser1.test.js root &gt; browser (cdp) verifying get screenshot smoke screenshot example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements) example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements) example\browser1.test.js root &gt; browser (cdp) frames or ifrmes example\browser1.test.js root &gt; browser (cdp) mouse actions example\browser1.test.js root &gt; browser (cdp) single dropdown handling example\browser1.test.js root &gt; browser (cdp) checkbox and radio">
-    <div class="report-file-header" role="button" tabindex="0" aria-expanded="true" data-target="file-example_browser1_test_js">
+  <div class="report-file-group" data-file="recorded.conf" data-search="recorded.conf recorded.conf recorded.conf recorded script – edit and run with: cstesting &lt;file.conf&gt;">
+    <div class="report-file-header" role="button" tabindex="0" aria-expanded="true" data-target="file-recorded_conf">
       <span class="report-file-chevron">▼</span>
-      <span class="report-file-path">example\browser1.test.js</span>
-      <span class="report-file-count">7 tests</span>
+      <span class="report-file-path">recorded.conf</span>
+      <span class="report-file-count">1 test</span>
       <span class="report-file-badges">
         <span class="report-file-badge pass">✓ 1</span>
         
-        <span class="report-file-badge skip">⊘ 6</span>
+        
       </span>
     </div>
-    <div id="file-example_browser1_test_js" class="report-file-tests">
+    <div id="file-recorded_conf" class="report-file-tests">
       
-    <div class="report-test-row report-test-pass" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) verifying get screenshot smoke screenshot" data-index="0">
+    <div class="report-test-row report-test-pass" data-expanded="false" data-search="recorded.conf recorded.conf recorded script – edit and run with: cstesting &lt;file.conf&gt;" data-index="0">
       <span class="report-dot pass"></span>
       <div class="report-test-body">
         <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
-          <span class="report-test-name">root &gt; Browser (CDP) › verifying get screenshot</span>
+          <span class="report-test-name">recorded.conf › Recorded script – edit and run with: cstesting &lt;file.conf&gt;</span>
           <span class="report-test-meta">
-            <span class="report-test-duration" title="Duration">7.8s</span>
+            <span class="report-test-duration" title="Duration">28.3s</span>
             <span class="report-status-badge status-pass">Passed</span>
             <span class="report-chevron">▶</span>
           </span>
         </div>
-        <div class="report-tags-row"><span class="report-tag">smoke</span><span class="report-tag">screenshot</span></div>
-        <div class="report-source">example\browser1.test.js</div>
+        
+        <div class="report-source">recorded.conf</div>
         <div class="report-test-details">
           
     <div class="report-section">
@@ -133,151 +136,44 @@
         <div class="report-step-row">
           <span class="report-step-icon report-step-passed">✓</span>
           <span class="report-step-index">1</span>
-          <span class="report-step-title">Test case started</span>
+          <span class="report-step-title">goto https://testautomationpractice.blogspot.com/</span>
         </div>
         <div class="report-step-row">
           <span class="report-step-icon report-step-passed">✓</span>
           <span class="report-step-index">2</span>
-          <span class="report-step-title">Goto https://testautomationpractice.blogspot.com/</span>
+          <span class="report-step-title">click #confirmBtn</span>
         </div>
         <div class="report-step-row">
           <span class="report-step-icon report-step-passed">✓</span>
           <span class="report-step-index">3</span>
-          <span class="report-step-title">Sleep 2000ms</span>
+          <span class="report-step-title">click div:nth-of-type(6) &gt; div:nth-of-type(1)</span>
+        </div>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">4</span>
+          <span class="report-step-title">assertText #demo contains &quot;You pressed OK!&quot;</span>
+        </div>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">5</span>
+          <span class="report-step-title">dialog prompt:lokesh</span>
+        </div>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">6</span>
+          <span class="report-step-title">click #promptBtn</span>
+        </div>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">7</span>
+          <span class="report-step-title">click div:nth-of-type(6) &gt; div:nth-of-type(1)</span>
+        </div>
+        <div class="report-step-row">
+          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-index">8</span>
+          <span class="report-step-title">assertText #demo contains &quot;Hello lokesh! How are you today?&quot;</span>
         </div>
       </div>
-    </div>
-          
-        </div>
-      </div>
-    </div>
-    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)" data-index="1">
-      <span class="report-dot skip"></span>
-      <div class="report-test-body">
-        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
-          <span class="report-test-name">root &gt; Browser (CDP) › locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
-          <span class="report-test-meta">
-            <span class="report-test-duration" title="Duration">0ms</span>
-            <span class="report-status-badge status-skip">Skipped</span>
-            <span class="report-chevron">▶</span>
-          </span>
-        </div>
-        
-        <div class="report-source">example\browser1.test.js</div>
-        <div class="report-test-details">
-          <div class="report-section">
-      <div class="report-section-title">Steps</div>
-      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
-    </div>
-          
-        </div>
-      </div>
-    </div>
-    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)" data-index="2">
-      <span class="report-dot skip"></span>
-      <div class="report-test-body">
-        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
-          <span class="report-test-name">root &gt; Browser (CDP) › locator shorthand: name=, id=, class= (strict mode: fails if 0 or 2+ elements)</span>
-          <span class="report-test-meta">
-            <span class="report-test-duration" title="Duration">0ms</span>
-            <span class="report-status-badge status-skip">Skipped</span>
-            <span class="report-chevron">▶</span>
-          </span>
-        </div>
-        
-        <div class="report-source">example\browser1.test.js</div>
-        <div class="report-test-details">
-          <div class="report-section">
-      <div class="report-section-title">Steps</div>
-      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
-    </div>
-          
-        </div>
-      </div>
-    </div>
-    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) frames or ifrmes" data-index="3">
-      <span class="report-dot skip"></span>
-      <div class="report-test-body">
-        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
-          <span class="report-test-name">root &gt; Browser (CDP) › frames or ifrmes</span>
-          <span class="report-test-meta">
-            <span class="report-test-duration" title="Duration">0ms</span>
-            <span class="report-status-badge status-skip">Skipped</span>
-            <span class="report-chevron">▶</span>
-          </span>
-        </div>
-        
-        <div class="report-source">example\browser1.test.js</div>
-        <div class="report-test-details">
-          <div class="report-section">
-      <div class="report-section-title">Steps</div>
-      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
-    </div>
-          
-        </div>
-      </div>
-    </div>
-    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) mouse actions" data-index="4">
-      <span class="report-dot skip"></span>
-      <div class="report-test-body">
-        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
-          <span class="report-test-name">root &gt; Browser (CDP) › mouse actions</span>
-          <span class="report-test-meta">
-            <span class="report-test-duration" title="Duration">0ms</span>
-            <span class="report-status-badge status-skip">Skipped</span>
-            <span class="report-chevron">▶</span>
-          </span>
-        </div>
-        
-        <div class="report-source">example\browser1.test.js</div>
-        <div class="report-test-details">
-          <div class="report-section">
-      <div class="report-section-title">Steps</div>
-      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
-    </div>
-          
-        </div>
-      </div>
-    </div>
-    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) single dropdown handling" data-index="5">
-      <span class="report-dot skip"></span>
-      <div class="report-test-body">
-        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
-          <span class="report-test-name">root &gt; Browser (CDP) › single dropdown handling</span>
-          <span class="report-test-meta">
-            <span class="report-test-duration" title="Duration">0ms</span>
-            <span class="report-status-badge status-skip">Skipped</span>
-            <span class="report-chevron">▶</span>
-          </span>
-        </div>
-        
-        <div class="report-source">example\browser1.test.js</div>
-        <div class="report-test-details">
-          <div class="report-section">
-      <div class="report-section-title">Steps</div>
-      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
-    </div>
-          
-        </div>
-      </div>
-    </div>
-    <div class="report-test-row report-test-skip" data-expanded="false" data-search="example\browser1.test.js root &gt; browser (cdp) checkbox and radio" data-index="6">
-      <span class="report-dot skip"></span>
-      <div class="report-test-body">
-        <div class="report-test-header" role="button" tabindex="0" aria-expanded="false">
-          <span class="report-test-name">root &gt; Browser (CDP) › checkbox and radio</span>
-          <span class="report-test-meta">
-            <span class="report-test-duration" title="Duration">0ms</span>
-            <span class="report-status-badge status-skip">Skipped</span>
-            <span class="report-chevron">▶</span>
-          </span>
-        </div>
-        
-        <div class="report-source">example\browser1.test.js</div>
-        <div class="report-test-details">
-          <div class="report-section">
-      <div class="report-section-title">Steps</div>
-      <p class="report-no-steps">No steps recorded. Use <code>step('name')</code> in your test to record steps.</p>
     </div>
           
         </div>

@@ -13,7 +13,7 @@ npm login
 Enter your npm username, password, and email when prompted.
 
 ### Fix package name (if needed)
-- The name `cstesting` might already be taken on npm. Check: [https://www.npmjs.com/package/cstesting](https://www.npmjs.com/package/cstesting)
+- The name `cstesting` might already be taken on npm. Check: [https://www.npmjs.com/package/cstesting]( =
 - If taken, use a **scoped name** in `package.json`:
   ```json
   "name": "@your-npm-username/cstesting"

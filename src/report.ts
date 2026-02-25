@@ -44,6 +44,8 @@ interface TestRow {
   duration?: number;
   steps?: string[];
   error?: Error;
+  /** 0-based index of the step that failed (config runs). */
+  failedStepIndex?: number;
   file?: string;
   tags?: string[];
 }
@@ -67,17 +69,24 @@ function buildTestRowHtml(row: TestRow, index: number): string {
   const description = `${escapeHtml(row.suite)} ${row.suite && row.test ? '›' : ''} ${escapeHtml(row.test)}`.trim();
 
   const hasSteps = row.steps && row.steps.length > 0;
+  const failedIdx = row.failedStepIndex;
   const stepsHtml = hasSteps
     ? `
     <div class="report-section">
       <div class="report-section-title">Steps</div>
       <div class="report-steps-list">
-        ${row.steps!.map((s, i) => `
+        ${row.steps!.map((s, i) => {
+          const isFailed = failedIdx !== undefined && i === failedIdx;
+          const isSkipped = failedIdx !== undefined && i > failedIdx;
+          const stepStatus = isFailed ? 'failed' : isSkipped ? 'skipped' : 'passed';
+          const stepIcon = isFailed ? '✗' : isSkipped ? '−' : '✓';
+          return `
         <div class="report-step-row">
-          <span class="report-step-icon report-step-passed">✓</span>
+          <span class="report-step-icon report-step-${stepStatus}">${stepIcon}</span>
           <span class="report-step-index">${i + 1}</span>
-          <span class="report-step-title">${escapeHtml(s)}</span>
-        </div>`).join('')}
+          <span class="report-step-title">${escapeHtml(s)}${isSkipped ? ' <span class="report-step-skipped-label">(skipped)</span>' : ''}</span>
+        </div>`;
+        }).join('')}
       </div>
     </div>`
     : `<div class="report-section">
@@ -180,6 +189,7 @@ export function generateHtmlReport(result: RunResult): string {
       duration: e.duration,
       steps: e.steps,
       error: e.error,
+      failedStepIndex: e.failedStepIndex,
       file: e.file,
       tags: e.tags,
     })),
@@ -292,6 +302,9 @@ export function generateHtmlReport(result: RunResult): string {
     .report-step-row:last-child { border-bottom: none; }
     .report-step-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
     .report-step-passed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .report-step-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .report-step-skipped { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+    .report-step-skipped-label { font-size: 11px; color: #64748b; font-weight: normal; }
     .report-error-section .report-error-content { position: relative; border: 1px solid #7f1d1d; border-radius: 6px; background: rgba(127, 29, 29, 0.15); padding: 12px; }
     .report-error-message, .report-error-stack { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #fca5a5; font-family: ui-monospace, monospace; }
     .report-error-stack { margin-top: 8px; font-size: 12px; color: #94a3b8; }

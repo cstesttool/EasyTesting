@@ -120,6 +120,42 @@ All steps under a `#` section run as **one test case** in order; pass/fail is fo
 
 **Programmatic:** `const { runConfigFile } = require('cstesting'); const result = await runConfigFile('login.conf');`
 
+### Record and export to .conf / .js / .ts (Codegen)
+
+Works like **Playwright codegen**: two windows — one for the browser, one for the live script.
+
+```bash
+# Open browser + inspector; optional URL like Playwright
+npx cstesting record
+npx cstesting record https://example.com
+
+# Optional: output file and format (default: recorded.conf)
+npx cstesting record https://example.com --output myflow.conf
+npx cstesting record --output tests/recorded.test.js --format js
+```
+
+1. Run **`npx cstesting record`** or **`npx cstesting record <url>`**.
+2. **Two windows open**: the browser (interact here) and the **CSTesting Codegen** inspector (live script in Config / JavaScript / TypeScript).
+3. In the browser: navigate (if you didn’t pass a URL), click, type, select, check. The inspector updates in real time.
+4. Use **Copy** in the inspector or press **Ctrl+C** in the terminal to stop; the script is saved to the chosen file (default: `recorded.conf`).
+5. Run the generated file: `npx cstesting myflow.conf` or `npx cstesting tests/recorded.test.js`.
+
+**Switching tabs when recording**
+
+- **Automatic (if supported):** When you open a new tab (e.g. click a link with “Open in new tab”), the recorder may add a `switchTab=1` step. This depends on your Chrome/CDP setup.
+- **Manual:** After recording, edit the `.conf` file and add a **`switchTab=N`** line right after the click that opens the new tab. Use 0-based index: `0` = first tab, `1` = second tab, etc.
+
+Example — click opens a new tab, then you want to work in that tab:
+
+```conf
+click=#linkThatOpensNewTab
+switchTab=1
+# next steps run in the new tab
+click=#buttonInNewTab
+```
+
+To go back to the first tab later, add `switchTab=0`.
+
 ## API
 
 ### Test structure
