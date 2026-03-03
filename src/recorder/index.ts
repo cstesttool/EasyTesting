@@ -1,7 +1,7 @@
 /**
- * Record browser actions and export to .conf, .js, or .ts.
+ * Record browser actions and export to .conf, .js, .ts, or .java.
  * Playwright-style codegen: two windows (browser + inspector with live script).
- * Usage: cstesting record [url]  or  cstesting record [url] [--output file] [--format conf|js|ts]
+ * Usage: cstesting record [url] [--browser chrome|edge|opera|firefox] [--output file] [--format conf|js|ts|java]
  */
 
 import * as fs from 'fs';
@@ -9,9 +9,10 @@ import * as path from 'path';
 import * as http from 'http';
 import * as readline from 'readline';
 import CDP from 'chrome-remote-interface';
-import { launchChrome } from '../browser/launch';
+import { launchChrome, launchBrowser, type BrowserType } from '../browser/launch';
+import { fetchBrowserWebSocketUrl } from '../browser';
 import type { RecordedStep } from './recorded-step';
-import { toConf, toJs, toTs } from './exporters';
+import { toConf, toJs, toTs, toJava } from './exporters';
 import { createInspectorServer } from './inspector-server';
 
 function askDialogInTerminal(
@@ -65,9 +66,19 @@ function getSelector(el){
   }
   return path.join(' > ')||(el.tagName?el.tagName.toLowerCase():'');
 }
+function fallbackSelector(el){
+  if(!el||!el.tagName)return '';
+  var tag=el.tagName.toLowerCase();
+  if(el.id&&document.querySelectorAll('#'+CSS.escape(el.id)).length===1)return '#'+el.id;
+  var parent=el.parentElement;
+  if(!parent)return tag;
+  var idx=0,sib=el;
+  while(sib){if(sib.tagName===el.tagName)idx++;sib=sib.previousElementSibling;}
+  return fallbackSelector(parent)+' > '+tag+':nth-of-type('+idx+')';
+}
 function send(step){if(typeof window.cstRecordStep==='function'){try{window.cstRecordStep(JSON.stringify(step));}catch(e){}}}
 document.addEventListener('click',function(e){
-  var el=e.target,selector=getSelector(el);
+  var el=e.target,selector=getSelector(el)||fallbackSelector(el);
   if(!selector)return;
   var tag=el.tagName.toUpperCase();
   if(tag==='SELECT')return;
@@ -107,7 +118,7 @@ document.addEventListener('change',function(e){
   if(tag==='SELECT'){var opt=el.options[el.selectedIndex];send({action:'select',selector:selector,value:opt?opt.value:'',label:opt?opt.text:''});}
   else if(tag==='INPUT'&&(el.type==='checkbox'||el.type==='radio'))send({action:el.checked?'check':'uncheck',selector:selector});
 },true);
-var assertMenuEl,assertTargetEl;
+var assertMenuEl,assertTargetEl,dragSourceSelector='';
 function hideAssertMenu(){if(assertMenuEl){assertMenuEl.remove();assertMenuEl=null;}assertTargetEl=null;}
 function getElementText(el){
   if(!el)return '';
@@ -121,24 +132,40 @@ function getElementAttr(el,attr){
 }
 document.addEventListener('contextmenu',function(e){
   var el=e.target;if(!el||!el.tagName)return;
-  var selector=getSelector(el);if(!selector)return;
+  var selector=getSelector(el)||fallbackSelector(el);if(!selector)return;
   e.preventDefault();
+  send({action:'rightClick',selector:selector});
   assertTargetEl=el;
   if(assertMenuEl)hideAssertMenu();
   var menu=document.createElement('div');
   menu.style.cssText='position:fixed;left:'+e.clientX+'px;top:'+e.clientY+'px;z-index:2147483647;background:#252526;border:1px solid #3c3c3c;border-radius:4px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.4);font-family:sans-serif;font-size:13px;min-width:200px;';
   function addItem(label,cb){var b=document.createElement('div');b.textContent=label;b.style.cssText='padding:6px 12px;cursor:pointer;color:#d4d4d4';b.onmouseover=function(){b.style.background='#3c3c3c';};b.onmouseout=function(){b.style.background='transparent';};b.onclick=function(e){e.stopPropagation();cb();};menu.appendChild(b);}
   addItem('Assert text on this element',function(){
-    var sel=getSelector(assertTargetEl),exp=getElementText(assertTargetEl);
+    var sel=getSelector(assertTargetEl)||fallbackSelector(assertTargetEl),exp=getElementText(assertTargetEl);
     if(sel)send({action:'assertText',selector:sel,expected:exp});
     hideAssertMenu();
   });
   addItem('Assert attribute...',function(){
     var attr=prompt('Attribute name (e.g. value, href, placeholder):','value');
     if(attr!=null&&attr.trim()){
-      var sel=getSelector(assertTargetEl),exp=getElementAttr(assertTargetEl,attr.trim());
+      var sel=getSelector(assertTargetEl)||fallbackSelector(assertTargetEl),exp=getElementAttr(assertTargetEl,attr.trim());
       if(sel)send({action:'assertAttribute',selector:sel,attributeName:attr.trim(),expected:exp});
     }
+    hideAssertMenu();
+  });
+  addItem('Hover on this element',function(){
+    var sel=getSelector(assertTargetEl)||fallbackSelector(assertTargetEl);
+    if(sel)send({action:'hover',selector:sel});
+    hideAssertMenu();
+  });
+  addItem('Drag from here',function(){
+    var sel=getSelector(assertTargetEl)||fallbackSelector(assertTargetEl);
+    if(sel)dragSourceSelector=sel;
+    hideAssertMenu();
+  });
+  if(dragSourceSelector)addItem('Drop here',function(){
+    var targetSel=getSelector(assertTargetEl)||fallbackSelector(assertTargetEl);
+    if(targetSel){send({action:'dragAndDrop',sourceSelector:dragSourceSelector,selector:targetSel});dragSourceSelector='';}
     hideAssertMenu();
   });
   assertMenuEl=menu;
@@ -150,13 +177,14 @@ else window.addEventListener('load',function(){if(location.href&&location.href!=
 })();`;
 
 export interface RecordOptions {
-  /** Output file path. Default: recorded.conf (or .js/.ts based on format). */
+  /** Output file path. Default: recorded.conf (or .js/.ts/.java based on format). */
   output?: string;
-  /** Export format: conf | js | ts. Default: conf. */
-  format?: 'conf' | 'js' | 'ts';
+  /** Export format: conf | js | ts | java. Default: conf. */
+  format?: 'conf' | 'js' | 'ts' | 'java';
 }
 
 const recordedSteps: RecordedStep[] = [];
+let recordingPaused = false;
 let launched: { kill: () => void | Promise<void> } | null = null;
 let launchedInspector: { kill: () => void | Promise<void> } | null = null;
 let inspectorServer: http.Server | null = null;
@@ -192,6 +220,9 @@ function normalizeStep(raw: Record<string, unknown>): RecordedStep | null {
   if (action === 'hover' && raw.selector) {
     return { action: 'hover', selector: String(raw.selector) };
   }
+  if (action === 'dragAndDrop' && raw.sourceSelector && raw.selector) {
+    return { action: 'dragAndDrop', sourceSelector: String(raw.sourceSelector), selector: String(raw.selector) };
+  }
   if (action === 'assertText' && raw.selector && raw.expected !== undefined) {
     return { action: 'assertText', selector: String(raw.selector), expected: String(raw.expected) };
   }
@@ -209,19 +240,75 @@ function normalizeStep(raw: Record<string, unknown>): RecordedStep | null {
 export interface StartRecordingOptions {
   /** Called when the recording browser window is closed. Use to stop, export, and exit. */
   onBrowserClose?: () => void;
+  /** Browser to use for recording: 'chrome' | 'edge' | 'opera' | 'firefox'. Default: 'chrome'. */
+  browser?: BrowserType;
 }
 
 export async function startRecording(initialUrl?: string, options: StartRecordingOptions = {}): Promise<void> {
-  const { onBrowserClose } = options;
+  const { onBrowserClose, browser: browserType = 'chrome' } = options;
   recordedSteps.length = 0;
-  const { server, port } = await createInspectorServer(() => recordedSteps);
+
+  let doStartRecording: () => Promise<void> = async () => {};
+  recordingPaused = false;
+  const { server, port } = await createInspectorServer(
+    () => recordedSteps,
+    () => doStartRecording(),
+    {
+      onPause: () => {
+        recordingPaused = true;
+        console.log('  [Recording paused]');
+      },
+      onResume: () => {
+        recordingPaused = false;
+        console.log('  [Recording resumed]');
+      },
+    }
+  );
   inspectorServer = server;
   const inspectorUrl = 'http://127.0.0.1:' + port + '/';
 
-  const chrome = await launchChrome({ headless: false });
-  launched = chrome;
+  let launcher: { port: number; kill: () => void | Promise<void>; webSocketUrl?: string };
+  if (browserType === 'chrome') {
+    launcher = await launchChrome({ headless: false });
+  } else if (browserType === 'firefox') {
+    try {
+      launcher = await launchBrowser({ headless: false, browser: 'firefox' });
+    } catch {
+      console.log('\n  Firefox not found or could not start. Opening Chrome instead…\n');
+      launcher = await launchChrome({ headless: false });
+    }
+  } else {
+    launcher = await launchBrowser({ headless: false, browser: browserType });
+  }
+  launched = launcher;
 
-  const client = (await CDP({ port: chrome.port, host: 'localhost' })) as unknown as {
+  let cdpOpts: { port: number; host: string; target?: string; local?: boolean } = { port: launcher.port, host: 'localhost' };
+  if (browserType === 'firefox' && launcher.webSocketUrl !== undefined) {
+    let wsUrl = launcher.webSocketUrl;
+    await new Promise((r) => setTimeout(r, 800));
+    try {
+      const fromApi = await fetchBrowserWebSocketUrl(launcher.port, '127.0.0.1', { retries: 8, delayMs: 500 });
+      if (fromApi) wsUrl = fromApi;
+    } catch {
+      // keep wsUrl from stderr
+    }
+    if (!wsUrl) {
+      try {
+        launcher.kill();
+      } catch {
+        // ignore
+      }
+      console.log('\n  Firefox could not provide a debug URL. Opening Chrome instead…\n');
+      launcher = await launchChrome({ headless: false });
+      launched = launcher;
+      cdpOpts = { port: launcher.port, host: 'localhost' };
+    } else {
+      wsUrl = wsUrl.replace(/^wss?:\/\/localhost/i, (wsUrl.startsWith('wss:') ? 'wss://127.0.0.1' : 'ws://127.0.0.1'));
+      cdpOpts = { port: launcher.port, host: '127.0.0.1', target: wsUrl, local: true };
+    }
+  }
+
+  let client: {
     on: (event: string, handler: (...args: unknown[]) => void) => void;
     Page: {
       enable: () => Promise<void>;
@@ -237,6 +324,28 @@ export async function startRecording(initialUrl?: string, options: StartRecordin
       on: (event: string, handler: (params: { targetInfo: { type: string; targetId: string } }) => void) => void;
     };
   };
+  try {
+    client = (await CDP(cdpOpts)) as typeof client;
+  } catch (err) {
+    if (browserType === 'firefox') {
+      try {
+        launcher.kill();
+      } catch {
+        // ignore
+      }
+      console.log('\n  Firefox connection failed. Opening Chrome instead…\n');
+      launcher = await launchChrome({ headless: false });
+      launched = launcher;
+      cdpOpts = { port: launcher.port, host: 'localhost' };
+      try {
+        client = (await CDP(cdpOpts)) as typeof client;
+      } catch (chromeErr) {
+        throw chromeErr;
+      }
+    } else {
+      throw err;
+    }
+  }
 
   client.on('disconnect', () => {
     onBrowserClose?.();
@@ -252,26 +361,28 @@ export async function startRecording(initialUrl?: string, options: StartRecordin
       accept: answer.accept,
       ...(isPrompt && { promptText: answer.promptText ?? '' }),
     });
-    const dialogStep: RecordedStep = {
-      action: 'dialog',
-      behavior: answer.accept ? 'accept' : 'dismiss',
-      ...(isPrompt && answer.accept && { promptText: answer.promptText ?? '' }),
-    };
-    if (recordedSteps.length > 0) {
-      const last = recordedSteps.pop()!;
-      recordedSteps.push(dialogStep);
-      recordedSteps.push(last);
-    } else {
-      recordedSteps.push(dialogStep);
+    if (!recordingPaused) {
+      const dialogStep: RecordedStep = {
+        action: 'dialog',
+        behavior: answer.accept ? 'accept' : 'dismiss',
+        ...(isPrompt && answer.accept && { promptText: answer.promptText ?? '' }),
+      };
+      if (recordedSteps.length > 0) {
+        const last = recordedSteps.pop()!;
+        recordedSteps.push(dialogStep);
+        recordedSteps.push(last);
+      } else {
+        recordedSteps.push(dialogStep);
+      }
+      console.log('  Recorded: dialog', answer.accept ? 'accept' : 'dismiss', answer.promptText != null ? `"${answer.promptText}"` : '');
     }
-    console.log('  Recorded: dialog', answer.accept ? 'accept' : 'dismiss', answer.promptText != null ? `"${answer.promptText}"` : '');
   });
 
   if (client.Target && typeof client.Target.enable === 'function' && typeof client.Target.on === 'function') {
     try {
       await client.Target.enable();
       client.Target.on('targetCreated', async (params: { targetInfo: { type: string; targetId: string } }) => {
-        if (params.targetInfo.type !== 'page') return;
+        if (params.targetInfo.type !== 'page' || recordingPaused) return;
         try {
           const { targetInfos } = await client.Target!.getTargets();
           const pages = targetInfos.filter((t) => t.type === 'page');
@@ -288,10 +399,8 @@ export async function startRecording(initialUrl?: string, options: StartRecordin
       // Target domain not available in this Chrome/CRI version
     }
   }
-  await client.Page.addScriptToEvaluateOnNewDocument({ source: INJECTED_SCRIPT });
-  await client.Runtime.addBinding({ name: 'cstRecordStep' });
   client.Runtime.on('bindingCalled', (params: { name: string; payload: string }) => {
-    if (params.name !== 'cstRecordStep') return;
+    if (params.name !== 'cstRecordStep' || recordingPaused) return;
     try {
       const raw = JSON.parse(params.payload) as Record<string, unknown>;
       const step = normalizeStep(raw);
@@ -304,8 +413,13 @@ export async function startRecording(initialUrl?: string, options: StartRecordin
       // ignore parse errors
     }
   });
+
   const startUrl = initialUrl && (initialUrl.startsWith('http') || initialUrl.startsWith('file')) ? initialUrl : 'about:blank';
-  await client.Page.navigate({ url: startUrl });
+  doStartRecording = async () => {
+    await client.Page.addScriptToEvaluateOnNewDocument({ source: INJECTED_SCRIPT });
+    await client.Runtime.addBinding({ name: 'cstRecordStep' });
+    await client.Page.navigate({ url: startUrl });
+  };
 
   let inspectorOpened = false;
   try {
@@ -317,9 +431,8 @@ export async function startRecording(initialUrl?: string, options: StartRecordin
   }
 
   console.log('\n--- Recording ---');
-  console.log('Two windows: 1) Recording browser (interact here)  2) "CSTesting — Recording" (live script).');
-  console.log('Alerts/confirm/prompt: answer in this terminal (A/D or value). New tabs: recorded as switchTab.');
-  console.log('Closing the recording browser or pressing Ctrl+C will stop and save.\n');
+  console.log('Two windows: 1) Recording browser  2) "CSTesting — Recording" (inspector).');
+  console.log('Click **Start record** in the inspector to begin. Then interact in the browser; close browser or Ctrl+C to stop and save.\n');
 }
 
 export function stopRecording(): void {
@@ -360,9 +473,12 @@ export function exportRecorded(options: RecordOptions = {}): string {
   } else if (format === 'js') {
     content = toJs(steps);
     ext = '.test.js';
-  } else {
+  } else if (format === 'ts') {
     content = toTs(steps);
     ext = '.test.ts';
+  } else {
+    content = toJava(steps);
+    ext = '.java';
   }
   const outPath = options.output || path.join(process.cwd(), 'recorded' + ext);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -371,5 +487,5 @@ export function exportRecorded(options: RecordOptions = {}): string {
   return outPath;
 }
 
-export { toConf, toJs, toTs } from './exporters';
+export { toConf, toJs, toTs, toJava } from './exporters';
 export type { RecordedStep, RecordedAction } from './recorded-step';

@@ -29,6 +29,7 @@ export type ConfigStep =
   | { action: 'doubleClick'; locator: string }
   | { action: 'rightClick'; locator: string }
   | { action: 'hover'; locator: string }
+  | { action: 'dragAndDrop'; sourceLocator: string; locator: string }  // locator = drop target
   | { action: 'switchTab'; index: number }
   | { action: 'frame'; selector: string }  // 'main' = back to main; 'sel1,sel2' = nested frames
   | { action: 'check'; locator: string }
@@ -77,6 +78,18 @@ function parseLine(line: string): ConfigStep | null {
   if (rightClickMatch) return { action: 'rightClick', locator: rightClickMatch[1].trim() };
   const hoverMatch = trimmed.match(/^hover=(.+)$/);
   if (hoverMatch) return { action: 'hover', locator: hoverMatch[1].trim() };
+
+  // dragAndDrop=source=target
+  const dragMatch = trimmed.match(/^dragAndDrop=(.+)$/);
+  if (dragMatch) {
+    const rest = dragMatch[1].trim();
+    const eq = rest.indexOf('=');
+    if (eq > 0) {
+      const sourceLocator = rest.slice(0, eq).trim();
+      const targetLocator = rest.slice(eq + 1).trim();
+      if (sourceLocator && targetLocator) return { action: 'dragAndDrop', sourceLocator, locator: targetLocator };
+    }
+  }
 
   // check=, uncheck=
   const checkMatch = trimmed.match(/^check=(.+)$/);

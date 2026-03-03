@@ -135,7 +135,10 @@ function resolveConfigPath(configPath: string): string | null {
 }
 
 /** Run a config file (e.g. login.conf) and write report. */
-async function runConfig(configPath: string, options?: { headless?: boolean }): Promise<void> {
+async function runConfig(
+  configPath: string,
+  options?: { headless?: boolean; browser?: 'chrome' | 'edge' | 'opera' | 'firefox' }
+): Promise<void> {
   const cwd = process.cwd();
   const resolved = resolveConfigPath(configPath);
   if (!resolved) {
@@ -215,17 +218,29 @@ async function main(): Promise<void> {
   if (argv.includes('record')) {
     const outIdx = argv.indexOf('--output');
     const formatIdx = argv.indexOf('--format');
+    const browserIdx = argv.indexOf('--browser');
     let output = outIdx !== -1 && argv[outIdx + 1] ? argv[outIdx + 1] : undefined;
-    let format: 'conf' | 'js' | 'ts' = 'conf';
+    let format: 'conf' | 'js' | 'ts' | 'java' = 'conf';
+    let browser: 'chrome' | 'edge' | 'opera' | 'firefox' = 'chrome';
     if (formatIdx !== -1 && argv[formatIdx + 1]) {
       const f = argv[formatIdx + 1];
-      if (f === 'js' || f === 'ts') format = f;
+      if (f === 'js' || f === 'ts' || f === 'java') format = f;
+    }
+    if (browserIdx !== -1 && argv[browserIdx + 1]) {
+      const b = String(argv[browserIdx + 1]).toLowerCase();
+      if (b === 'edge' || b === 'opera' || b === 'firefox') browser = b;
     }
     if (output && format === 'conf') {
       if (output.endsWith('.test.js') || output.endsWith('.js')) format = 'js';
       else if (output.endsWith('.test.ts') || output.endsWith('.ts')) format = 'ts';
+      else if (output.endsWith('.java')) format = 'java';
     }
-    const recordArgv = argv.filter((a) => a !== 'record' && a !== '--output' && a !== '--format' && (outIdx === -1 || a !== argv[outIdx + 1]) && (formatIdx === -1 || a !== argv[formatIdx + 1]));
+    const recordArgv = argv.filter(
+      (a) => a !== 'record' && a !== '--output' && a !== '--format' && a !== '--browser' &&
+        (outIdx === -1 || a !== argv[outIdx + 1]) &&
+        (formatIdx === -1 || a !== argv[formatIdx + 1]) &&
+        (browserIdx === -1 || a !== argv[browserIdx + 1])
+    );
     const urlArg = recordArgv.find((a) => !a.startsWith('-') && (a.startsWith('http') || a.startsWith('file') || a.startsWith('https')));
     const initialUrl = urlArg || undefined;
 
@@ -251,6 +266,7 @@ async function main(): Promise<void> {
     try {
       await startRecording(initialUrl, {
         onBrowserClose: () => doStopAndExit(0),
+        browser,
       });
     } catch (err) {
       console.error('Recording failed:', err instanceof Error ? err.message : err);
@@ -267,11 +283,18 @@ async function main(): Promise<void> {
     const runIdx = argv.indexOf('run');
     const configPath = argv[runIdx + 1];
     if (!configPath) {
-      console.error('Usage: cstesting run <config.conf> [--headed]');
+      console.error('Usage: cstesting run <config.conf> [--headed] [--browser chrome|edge|opera|firefox]');
       process.exit(1);
     }
     const headed = argv.includes('--headed');
-    await runConfig(configPath, headed ? { headless: false } : undefined);
+    const browserIdx = argv.indexOf('--browser');
+    let browser: 'chrome' | 'edge' | 'opera' | 'firefox' | undefined;
+    if (browserIdx !== -1 && argv[browserIdx + 1]) {
+      const b = String(argv[browserIdx + 1]).toLowerCase();
+      if (b === 'edge' || b === 'opera' || b === 'firefox') browser = b;
+      else if (b === 'chrome') browser = 'chrome';
+    }
+    await runConfig(configPath, { headless: !headed, browser });
     return;
   }
 
@@ -285,7 +308,14 @@ async function main(): Promise<void> {
       const configResolved = resolveConfigPath(arg);
       if (configResolved) {
         const headed = argv.includes('--headed');
-        await runConfig(arg, headed ? { headless: false } : undefined);
+        const browserIdx = argv.indexOf('--browser');
+        let browser: 'chrome' | 'edge' | 'opera' | 'firefox' | undefined;
+        if (browserIdx !== -1 && argv[browserIdx + 1]) {
+          const b = String(argv[browserIdx + 1]).toLowerCase();
+          if (b === 'edge' || b === 'opera' || b === 'firefox') browser = b;
+          else if (b === 'chrome') browser = 'chrome';
+        }
+        await runConfig(arg, { headless: !headed, browser });
         return;
       }
     }

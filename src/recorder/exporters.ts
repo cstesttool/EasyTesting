@@ -1,8 +1,22 @@
 /**
- * Export recorded steps to .conf, .js, or .ts format.
+ * Export recorded steps to .conf, .js, .ts, or .java format.
  */
 
 import type { RecordedStep } from './recorded-step';
+
+/** Escape string for Java double-quoted literal. */
+function javaStr(s: string): string {
+  return (
+    '"' +
+    String(s)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t') +
+    '"'
+  );
+}
 
 export function toConf(steps: RecordedStep[]): string {
   const lines: string[] = ['# Recorded script – edit and run with: cstesting <file.conf>', 'headless=false', ''];
@@ -27,6 +41,8 @@ export function toConf(steps: RecordedStep[]): string {
       lines.push('uncheck=' + s.selector);
     } else if (s.action === 'hover' && s.selector) {
       lines.push('hover=' + s.selector);
+    } else if (s.action === 'dragAndDrop' && s.sourceSelector && s.selector) {
+      lines.push('dragAndDrop=' + s.sourceSelector + '=' + s.selector);
     } else if (s.action === 'wait' && s.ms) {
       lines.push('wait:' + s.ms);
     } else if (s.action === 'assertText' && s.selector && s.expected !== undefined) {
@@ -81,6 +97,8 @@ export function toJs(steps: RecordedStep[]): string {
       lines.push("    await browser.uncheck('" + s.selector.replace(/'/g, "\\'") + "');");
     } else if (s.action === 'hover' && s.selector) {
       lines.push("    await browser.hover('" + s.selector.replace(/'/g, "\\'") + "');");
+    } else if (s.action === 'dragAndDrop' && s.sourceSelector && s.selector) {
+      lines.push("    await browser.dragAndDrop('" + s.sourceSelector.replace(/'/g, "\\'") + "', '" + s.selector.replace(/'/g, "\\'") + "');");
     } else if (s.action === 'wait' && s.ms) {
       lines.push("    await browser.sleep(" + s.ms + ");");
     } else if (s.action === 'assertText' && s.selector && s.expected !== undefined) {
@@ -112,4 +130,104 @@ export function toTs(steps: RecordedStep[]): string {
   return js
     .replace("const et = require('cstesting');", "import * as et from 'cstesting';")
     .replace(/describe\('Recorded'/g, "describe('Recorded'");
+}
+
+/**
+ * Export recorded steps to Java (CSTesting-Java API).
+ * Generates a test class extending CSTestingTestBase with @CSTest method.
+ * Run with CSTestingRunner or mvn exec:java -Pannotation-tests.
+ */
+export function toJava(steps: RecordedStep[]): string {
+  const lines: string[] = [
+    'package com.cstesting.recorded;',
+    '',
+    'import com.cstesting.CSTesting;',
+    'import com.cstesting.CSTestingOptions;',
+    'import com.cstesting.annotations.AfterMethod;',
+    'import com.cstesting.annotations.BeforeMethod;',
+    'import com.cstesting.annotations.CSTest;',
+    'import com.cstesting.runner.CSTestingTestBase;',
+    '',
+    '/** Recorded test – run with your test runner (e.g. mvn exec:java -Pannotation-tests) */',
+    'public class RecordedTest extends CSTestingTestBase {',
+    '',
+    '    private boolean browserCreatedHere;',
+    '',
+    '    @BeforeMethod',
+    '    public void beforeEach() {',
+    '        if (browser == null) {',
+    '            browser = CSTesting.createBrowser(CSTestingOptions.builder().headless(false).build());',
+    '            browserCreatedHere = true;',
+    '        } else {',
+    '            browserCreatedHere = false;',
+    '        }',
+    '    }',
+    '',
+    '    @AfterMethod',
+    '    public void afterEach() {',
+    '        if (browserCreatedHere && browser != null) {',
+    '            try { browser.close(); } catch (Exception ignored) {}',
+    '            browser = null;',
+    '        }',
+    '    }',
+    '',
+    '    @CSTest(description = "Recorded steps")',
+    '    public void recordedSteps() {',
+  ];
+  for (const s of steps) {
+    if (s.action === 'goto' && s.url) {
+      lines.push('        browser.gotoUrl(' + javaStr(s.url) + ');');
+    } else if (s.action === 'click' && s.selector) {
+      lines.push('        browser.click(' + javaStr(s.selector) + ');');
+    } else if (s.action === 'doubleClick' && s.selector) {
+      lines.push('        browser.doubleClick(' + javaStr(s.selector) + ');');
+    } else if (s.action === 'rightClick' && s.selector) {
+      lines.push('        browser.rightClick(' + javaStr(s.selector) + ');');
+    } else if (s.action === 'type' && s.selector && s.value !== undefined) {
+      lines.push('        browser.type(' + javaStr(s.selector) + ", " + javaStr(s.value) + ');');
+    } else if (s.action === 'select' && s.selector && s.value !== undefined) {
+      lines.push('        browser.select(' + javaStr(s.selector) + ", " + javaStr(s.value) + ');');
+    } else if (s.action === 'select' && s.selector && (s as RecordedStep & { label?: string }).label) {
+      const label = (s as RecordedStep & { label: string }).label;
+      lines.push('        browser.select(' + javaStr(s.selector) + ", " + javaStr(label) + ');');
+    } else if (s.action === 'check' && s.selector) {
+      lines.push('        browser.check(' + javaStr(s.selector) + ');');
+    } else if (s.action === 'uncheck' && s.selector) {
+      lines.push('        browser.uncheck(' + javaStr(s.selector) + ');');
+    } else if (s.action === 'hover' && s.selector) {
+      lines.push('        browser.hover(' + javaStr(s.selector) + ');');
+    } else if (s.action === 'dragAndDrop' && s.sourceSelector && s.selector) {
+      lines.push('        browser.dragAndDrop(' + javaStr(s.sourceSelector) + ", " + javaStr(s.selector) + ');');
+    } else if (s.action === 'wait' && s.ms) {
+      lines.push('        browser.waitForTime(' + s.ms + 'L);');
+    } else if (s.action === 'assertText' && s.selector && s.expected !== undefined) {
+      lines.push(
+        '        browser.assertThat(browser.locator(' + javaStr(s.selector) + ")).hasText(" + javaStr(s.expected) + ');'
+      );
+    } else if (s.action === 'assertAttribute' && s.selector && s.attributeName && s.expected !== undefined) {
+      lines.push(
+        '        browser.assertThat(browser.locator(' +
+          javaStr(s.selector) +
+          ')).hasAttribute(' +
+          javaStr(s.attributeName) +
+          ", " +
+          javaStr(s.expected) +
+          ');'
+      );
+    } else if (s.action === 'dialog') {
+      if (s.behavior === 'dismiss') {
+        lines.push('        browser.dismissNextAlert();');
+      } else if (s.promptText !== undefined && s.promptText !== '') {
+        lines.push('        browser.acceptNextAlert(' + javaStr(s.promptText) + ');');
+      } else {
+        lines.push('        browser.acceptNextAlert();');
+      }
+    } else if (s.action === 'switchTab' && s.index !== undefined) {
+      lines.push('        java.util.List<String> handles = browser.getWindowHandles();');
+      lines.push('        if (' + s.index + ' < handles.size()) browser.switchToWindow(handles.get(' + s.index + '));');
+    }
+  }
+  lines.push('    }');
+  lines.push('}');
+  return lines.join('\n');
 }

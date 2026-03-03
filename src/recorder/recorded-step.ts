@@ -13,6 +13,7 @@ export type RecordedAction =
   | 'check'
   | 'uncheck'
   | 'hover'
+  | 'dragAndDrop'
   | 'wait'
   | 'assertText'
   | 'assertAttribute'
@@ -39,4 +40,6 @@ export interface RecordedStep {
   promptText?: string;
   /** For switchTab: 0-based tab index. */
   index?: number;
+  /** For dragAndDrop: selector of the element to drag (source). */
+  sourceSelector?: string;
 }

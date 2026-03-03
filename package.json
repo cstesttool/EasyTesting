@@ -1,6 +1,6 @@
 {
   "name": "cstesting",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "A simple, extensible Node.js testing framework — start with a test runner and assertions, extend with browser automation later.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -44,6 +44,9 @@
   "dependencies": {
     "chrome-launcher": "^1.0.0",
     "chrome-remote-interface": "^0.33.2"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.49.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

@@ -5,7 +5,59 @@
 
 import * as http from 'http';
 import CDP from 'chrome-remote-interface';
-import { launchChrome, type LaunchOptions, type LaunchedChrome } from './launch';
+import { launchChrome, launchBrowser, type LaunchOptions, type LaunchedChrome, type BrowserType } from './launch';
+
+/** Poll /json/version until ready; return webSocketDebuggerUrl. Used for Firefox (avoids /json/list 404). */
+export function fetchBrowserWebSocketUrl(
+  port: number,
+  host: string,
+  options?: { retries?: number; delayMs?: number }
+): Promise<string> {
+  const retries = options?.retries ?? 15;
+  const delayMs = options?.delayMs ?? 400;
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    function tryFetch() {
+      const req = http.get(
+        { host, port, path: '/json/version', timeout: 3000 },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => (data += chunk));
+          res.on('end', () => {
+            if (res.statusCode !== 200) {
+              next();
+              return;
+            }
+            try {
+              const info = JSON.parse(data) as { webSocketDebuggerUrl?: string };
+              if (info.webSocketDebuggerUrl) {
+                resolve(info.webSocketDebuggerUrl);
+                return;
+              }
+            } catch {
+              // ignore
+            }
+            next();
+          });
+        }
+      );
+      req.on('error', () => next());
+      req.on('timeout', () => {
+        req.destroy();
+        next();
+      });
+      function next() {
+        attempts++;
+        if (attempts >= retries) {
+          reject(new Error(`Browser debug API at ${host}:${port} did not respond with /json/version after ${retries} attempts. For Firefox, ensure it is built with CDP (Firefox 86+) or use Chrome/Edge.`));
+          return;
+        }
+        setTimeout(tryFetch, delayMs);
+      }
+    }
+    tryFetch();
+  });
+}
 import { createPage, type PageApi } from './cdp-page';
 import type { CDPClient, DialogHandler } from './cdp-page';
 import {
@@ -263,8 +315,10 @@ export interface WaitForNewTabOptions {
 export type StepReporter = (message: string) => void;
 
 export interface CreateBrowserOptions extends LaunchOptions {
-  /** Connect to existing Chrome on port instead of launching. */
+  /** Connect to existing browser on port instead of launching. */
   port?: number;
+  /** Browser to launch: 'chrome' | 'edge' | 'opera' | 'firefox'. Default: 'chrome'. Ignored if port is set. */
+  browser?: BrowserType;
   /** Called for each action (goto, click, frame, waitForSelector, etc.) so you can pass step() to record in the report. */
   onStep?: StepReporter;
 }
@@ -278,22 +332,46 @@ export interface CreateBrowserOptions extends LaunchOptions {
  *   await browser.close();
  */
 export async function createBrowser(options: CreateBrowserOptions = {}): Promise<BrowserApi> {
+  if (options.browser === 'firefox' && (options.port == null || options.port === 0)) {
+    try {
+      const { createBrowserWithFirefoxBiDi } = await import('./firefox-bidi');
+      return createBrowserWithFirefoxBiDi({ headless: options.headless });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Playwright') || msg.includes('playwright')) throw err;
+      throw new Error(
+        `Firefox (BiDi) requires the optional CSTesting browser engine. See CSTesting docs.\n${msg}`
+      );
+    }
+  }
+
   let launched: LaunchedChrome | null = null;
   let port = options.port;
 
   if (port == null || port === 0) {
-    launched = await launchChrome({
+    const launchOpts = {
       headless: options.headless,
       port: options.port,
       args: options.args,
       userDataDir: options.userDataDir,
-    });
+      browser: options.browser,
+    };
+    launched = options.browser && options.browser !== 'chrome'
+      ? await launchBrowser(launchOpts)
+      : await launchChrome(launchOpts);
     port = launched.port;
   }
   const debugPort: number = port as number;
 
   const host = 'localhost';
-  let client = (await CDP({ port: debugPort, host })) as unknown as CDPClient;
+  let cdpOpts: { port: number; host: string; target?: string; local?: boolean } = { port: debugPort, host };
+  if (options.browser === 'firefox' && launched?.webSocketUrl) {
+    cdpOpts = { port: debugPort, host, target: launched.webSocketUrl, local: true };
+  } else if (options.browser === 'firefox') {
+    const wsUrl = await fetchBrowserWebSocketUrl(debugPort, host);
+    cdpOpts = { port: debugPort, host, target: wsUrl, local: true };
+  }
+  let client = (await CDP(cdpOpts)) as unknown as CDPClient;
   await client.Page.enable();
   let dialogHandler: DialogHandler | null = null;
   setupDialogHandler(client, () => dialogHandler);
@@ -773,7 +851,7 @@ export async function createBrowser(options: CreateBrowserOptions = {}): Promise
   };
 }
 
-export { launchChrome } from './launch';
+export { launchChrome, launchBrowser } from './launch';
 export { resolveSelector } from './cdp-page';
 export type { PageApi, DialogHandler, DialogHandlerResult, DialogOpeningParams, SelectOption, SelectOptionOrOptions, URLPattern } from './cdp-page';
-export type { LaunchOptions, LaunchedChrome } from './launch';
+export type { LaunchOptions, LaunchedChrome, BrowserType } from './launch';

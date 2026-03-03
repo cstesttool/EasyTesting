@@ -5,7 +5,7 @@
 import type { RunResult } from './types';
 import type { ParsedConfig, ConfigStep } from './config-parser';
 import { parseConfigFile } from './config-parser';
-import { createBrowser, resolveSelector } from './browser';
+import { createBrowser, resolveSelector, type BrowserType } from './browser';
 import type { BrowserApi, FrameHandle } from './browser';
 
 function stepLabel(step: ConfigStep): string {
@@ -26,6 +26,8 @@ function stepLabel(step: ConfigStep): string {
       return `rightClick ${step.locator}`;
     case 'hover':
       return `hover ${step.locator}`;
+    case 'dragAndDrop':
+      return `dragAndDrop ${(step as { sourceLocator: string }).sourceLocator} → ${step.locator}`;
     case 'switchTab':
       return `switchTab ${step.index}`;
     case 'frame':
@@ -57,7 +59,7 @@ function stepLabel(step: ConfigStep): string {
 /** Common interface for browser or frame (click, type, etc.). */
 type PageLike = Pick<
   BrowserApi,
-  'click' | 'type' | 'doubleClick' | 'rightClick' | 'hover' | 'check' | 'uncheck' | 'select' | 'waitForSelector'
+  'click' | 'type' | 'doubleClick' | 'rightClick' | 'hover' | 'dragAndDrop' | 'check' | 'uncheck' | 'select' | 'waitForSelector'
 >;
 
 /** Escape for use inside a JS expression string. */
@@ -215,6 +217,13 @@ async function executeStep(ctx: RunContext, step: ConfigStep): Promise<void> {
       await target.hover(step.locator);
       return;
     }
+    case 'dragAndDrop': {
+      const src = (step as { sourceLocator: string }).sourceLocator;
+      await target.waitForSelector(src, { timeout: 15000 });
+      await target.waitForSelector(step.locator, { timeout: 15000 });
+      await target.dragAndDrop(src, step.locator);
+      return;
+    }
     case 'check': {
       await target.waitForSelector(step.locator, { timeout: 15000 });
       await target.check(step.locator);
@@ -301,7 +310,10 @@ export interface RunConfigResult extends RunResult {
  * Run a config file: open browser, execute each test case (each # section = one test).
  * Each test case is reported as one test with all its steps listed.
  */
-export async function runConfigFile(configPath: string, options?: { headless?: boolean }): Promise<RunConfigResult> {
+export async function runConfigFile(
+  configPath: string,
+  options?: { headless?: boolean; browser?: BrowserType }
+): Promise<RunConfigResult> {
   const parsed = parseConfigFile(configPath);
   const { name: configName, testCases, headless: configHeadless } = parsed;
 
@@ -336,8 +348,9 @@ export async function runConfigFile(configPath: string, options?: { headless?: b
       console.log('  Test case:', testCaseName);
 
       if (!browser) {
-        console.log('  Launching browser (' + (headless ? 'headless' : 'visible window') + ')...');
-        browser = await createBrowser({ headless });
+        const browserName = options?.browser || 'chrome';
+        console.log('  Launching ' + browserName + ' (' + (headless ? 'headless' : 'visible window') + ')...');
+        browser = await createBrowser({ headless, browser: browserName });
         browser.setDialogHandler(() => {
           const p = nextDialog;
           nextDialog = null;
